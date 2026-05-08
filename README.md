@@ -41,15 +41,6 @@ Codex++ 启动后会解锁插件入口，并在会话列表悬停时显示删除
 
 ![Codex++ 配置界面](docs/images/settings-panel.png)
 
-## 讨论交流
-
-欢迎扫码加入 Codex++ 交流群，反馈问题、交流使用体验或提出新功能建议：
-
-<img src="docs/images/discussion-group-qr.jpg" alt="Codex++ 交流群二维码" width="260">
-
-## 友情链接
-
-- [LINUX DO](https://linux.do)
 
 ## 下载
 
