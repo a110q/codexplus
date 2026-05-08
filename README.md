@@ -41,19 +41,28 @@ Codex++ 启动后会解锁插件入口，并在会话列表悬停时显示删除
 
 ![Codex++ 配置界面](docs/images/settings-panel.png)
 
+## 讨论交流
+
+欢迎扫码加入 Codex++ 交流群，反馈问题、交流使用体验或提出新功能建议：
+
+<img src="docs/images/discussion-group-qr.jpg" alt="Codex++ 交流群二维码" width="260">
+
+## 友情链接
+
+- [LINUX DO](https://linux.do)
 
 ## 下载
 
-本仓库已包含预打包文件：
+预打包文件已放在 GitHub Releases：
 
-- macOS Apple Silicon：[packages/Codex++-macOS-arm64.zip](packages/Codex++-macOS-arm64.zip)
-- Windows x64 portable：[packages/Codex++-Windows-x64-portable.zip](packages/Codex++-Windows-x64-portable.zip)
+- macOS Apple Silicon：[Codex++-macOS-arm64.zip](https://github.com/a110q/codexplus/releases/download/v1.0.1/Codex%2B%2B-macOS-arm64.zip)
+- Windows x64 portable：[Codex++-Windows-x64-portable.zip](https://github.com/a110q/codexplus/releases/download/v1.0.1/Codex%2B%2B-Windows-x64-portable.zip)
 
-如果 GitHub 页面不方便直接下载大文件，也可以克隆仓库后在 `packages/` 目录中找到它们。
+Release 页面：[https://github.com/a110q/codexplus/releases/tag/v1.0.1](https://github.com/a110q/codexplus/releases/tag/v1.0.1)
 
 ## macOS 使用
 
-1. 下载 `packages/Codex++-macOS-arm64.zip`
+1. 下载 `Codex++-macOS-arm64.zip`
 2. 解压得到 `Codex++.app`
 3. 将 `Codex++.app` 放到 `/Applications` 或任意目录
 4. 双击 `Codex++.app` 启动
@@ -68,7 +77,7 @@ xattr -dr com.apple.quarantine /Applications/Codex++.app
 
 ## Windows 使用
 
-1. 下载 `packages/Codex++-Windows-x64-portable.zip`
+1. 下载 `Codex++-Windows-x64-portable.zip`
 2. 解压整个文件夹
 3. 确保 Windows 已安装 Codex App
 4. 双击文件夹里的 `Codex++.exe`
@@ -241,10 +250,6 @@ codex_session_delete/
 
 scripts/
   build_windows_portable.py
-
-packages/
-  Codex++-macOS-arm64.zip
-  Codex++-Windows-x64-portable.zip
 
 tests/
   自动化测试
