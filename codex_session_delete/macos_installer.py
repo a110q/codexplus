@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import plistlib
+import shlex
 import shutil
 import stat
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codex_session_delete import __version__
 from codex_session_delete.app_paths import find_macos_codex_app
+
+ICON_ASSET = Path(__file__).resolve().parent / "assets" / "codex-plus-plus.png"
 
 if TYPE_CHECKING:
     from codex_session_delete.installers import InstallOptions
@@ -21,6 +25,9 @@ EXECUTABLE_NAME = "CodexPlusPlus"
 def _launcher_command(options: "InstallOptions") -> str:
     if options.launcher_command:
         return options.launcher_command
+    project_root = Path(__file__).resolve().parent.parent
+    if (project_root / "pyproject.toml").is_file():
+        return f"env PYTHONPATH={shlex.quote(str(project_root))} {shlex.quote(sys.executable)} -m codex_session_delete launch"
     return f"{sys.executable} -m codex_session_delete launch"
 
 
@@ -40,11 +47,11 @@ def install_macos_app(options: "InstallOptions") -> None:
         "CFBundleName": "Codex++",
         "CFBundleDisplayName": "Codex++",
         "CFBundleIdentifier": "com.bigpizzav3.codexplusplus",
-        "CFBundleVersion": "1.0.1",
-        "CFBundleShortVersionString": "1.0.1",
+        "CFBundleVersion": __version__,
+        "CFBundleShortVersionString": __version__,
         "CFBundlePackageType": "APPL",
         "CFBundleExecutable": EXECUTABLE_NAME,
-        "CFBundleIconFile": "electron.icns",
+        "CFBundleIconFile": "codex-plus-plus.png",
         "LSUIElement": True,
         "LSMinimumSystemVersion": "12.0",
     }
@@ -64,6 +71,9 @@ def uninstall_macos_app(options: "InstallOptions") -> None:
 
 
 def _copy_codex_icon(resources: Path) -> None:
+    if ICON_ASSET.is_file():
+        shutil.copy2(ICON_ASSET, resources / "codex-plus-plus.png")
+        return
     codex_app = find_macos_codex_app()
     if codex_app is None:
         return

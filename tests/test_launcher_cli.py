@@ -50,6 +50,30 @@ def test_launch_codex_windows_allows_devtools_websocket_origin(monkeypatch):
     assert "--remote-allow-origins=http://127.0.0.1:9229" in popen_calls[0]
 
 
+def test_launch_codex_injects_detected_local_proxy(monkeypatch):
+    app_dir = Path("C:/Codex/app")
+    popen_calls = []
+    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("ALL_PROXY", raising=False)
+    monkeypatch.setattr(launcher, "local_proxy_url", lambda: "http://127.0.0.1:7897")
+    monkeypatch.setattr(launcher.subprocess, "Popen", lambda args, **kw: popen_calls.append((args, kw)))
+
+    launch_codex_app(app_dir, 9229)
+
+    assert popen_calls[0][1]["env"]["HTTP_PROXY"] == "http://127.0.0.1:7897"
+    assert popen_calls[0][1]["env"]["HTTPS_PROXY"] == "http://127.0.0.1:7897"
+
+
+def test_launch_codex_keeps_explicit_proxy(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9999")
+    monkeypatch.setattr(launcher, "local_proxy_url", lambda: (_ for _ in ()).throw(AssertionError("should not auto-detect")))
+
+    env = launcher.codex_process_environment()
+
+    assert env["HTTPS_PROXY"] == "http://127.0.0.1:9999"
+
+
 def test_launch_codex_macos_uses_open_command(monkeypatch, tmp_path):
     app = tmp_path / "Codex.app"
     (app / "Contents" / "MacOS").mkdir(parents=True)
@@ -137,37 +161,6 @@ def test_cli_launch_subcommand_keeps_helper_server_alive_after_injection(monkeyp
     assert len(calls) == 1
 
 
-def test_wait_for_shutdown_tracks_resolved_macos_app_process(monkeypatch, tmp_path):
-    server = FakeServer()
-    app = tmp_path / "OpenAI Codex.app"
-    app.mkdir()
-    calls = []
-    sleeps = []
-
-    monkeypatch.setattr(cli.sys, "platform", "darwin")
-    monkeypatch.setattr(cli, "resolve_codex_app_dir", lambda app_dir=None: app)
-    monkeypatch.setattr(cli._time, "sleep", lambda seconds: sleeps.append(seconds))
-
-    def fake_run(args, **kwargs):
-        calls.append(args)
-
-        class Result:
-            returncode = 0 if len(calls) == 1 else 1
-
-        return Result()
-
-    monkeypatch.setattr(cli._sp, "run", fake_run)
-
-    cli.wait_for_shutdown(server, None)
-
-    assert calls == [
-        ["pgrep", "-f", "^" + str(app / "Contents" / "MacOS" / "Codex")],
-        ["pgrep", "-f", "^" + str(app / "Contents" / "MacOS" / "Codex")],
-    ]
-    assert sleeps == [2]
-    assert server.shutdown_called is True
-
-
 def test_cli_install_dispatches_to_platform_installer(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(cli, "install_codex_plus_plus", lambda options: calls.append(options))
@@ -202,9 +195,10 @@ def test_launch_retries_injection_until_codex_page_is_ready(monkeypatch, tmp_pat
         attempts.append(args)
         if len(attempts) == 1:
             raise RuntimeError("CDP page not ready")
-        return {"result": {}}
+        return launcher.cdp.InjectionResult(websocket_url="ws://page", bridge_socket=None, result={"result": {}})
 
     monkeypatch.setattr(launcher, "inject_file", inject_after_retry)
+    monkeypatch.setattr(launcher, "evaluate_user_scripts", lambda websocket_url, script: None)
     monkeypatch.setattr(launcher.time, "sleep", lambda seconds: None)
 
     server, proc = launcher.launch_and_inject(None, None, tmp_path / "backups", 9229, 57321)
@@ -256,6 +250,67 @@ def test_launch_uses_resolved_app_dir(monkeypatch, tmp_path):
     assert "open" in launched[0]
 
 
+def test_cli_stops_existing_windows_launchers_before_launch(monkeypatch):
+    commands = []
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(cli.os, "getpid", lambda: 9876)
+    monkeypatch.setattr(cli.subprocess, "run", lambda command, **kwargs: commands.append((command, kwargs)))
+
+    cli.stop_existing_windows_launchers()
+
+    assert len(commands) == 1
+    command, kwargs = commands[0]
+    assert command[:3] == ["powershell", "-NoProfile", "-Command"]
+    assert "codex_session_delete" in command[3]
+    assert "pythonw?" in command[3]
+    assert "Stop-Process" in command[3]
+    assert kwargs["env"]["CODEX_PLUS_PLUS_PID"] == "9876"
+    assert kwargs["check"] is False
+
+
+def test_cli_skips_launcher_cleanup_on_non_windows(monkeypatch):
+    commands = []
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.setattr(cli.subprocess, "run", lambda command, **kwargs: commands.append((command, kwargs)))
+
+    cli.stop_existing_windows_launchers()
+
+    assert commands == []
+
+
+def test_cli_launch_runs_launcher_cleanup_before_injection(monkeypatch):
+    events = []
+    monkeypatch.setattr(cli, "stop_existing_windows_launchers", lambda: events.append("cleanup"))
+    monkeypatch.setattr(cli, "launch_and_inject", lambda *args: events.append("launch") or (FakeServer(), None))
+    monkeypatch.setattr(cli, "wait_for_shutdown", lambda server, proc: events.append("wait"))
+
+    exit_code = cli.main(["launch"])
+
+    assert exit_code == 0
+    assert events == ["cleanup", "launch", "wait"]
+
+
+def test_cli_launch_checks_update_before_injection(monkeypatch):
+    events = []
+    monkeypatch.setattr(cli, "stop_existing_windows_launchers", lambda: events.append("cleanup"))
+    monkeypatch.setattr(cli, "maybe_print_update_notice", lambda: events.append("check-update"))
+    monkeypatch.setattr(cli, "launch_and_inject", lambda *args: events.append("launch") or (FakeServer(), None))
+    monkeypatch.setattr(cli, "wait_for_shutdown", lambda server, proc: events.append("wait"))
+
+    exit_code = cli.main(["launch"])
+
+    assert exit_code == 0
+    assert events == ["cleanup", "check-update", "launch", "wait"]
+
+
+def test_cli_update_notice_ignores_network_errors(monkeypatch, capsys):
+    monkeypatch.setattr(cli.updater, "check_for_update", lambda: (_ for _ in ()).throw(RuntimeError("offline")))
+
+    cli.maybe_print_update_notice()
+
+    assert capsys.readouterr().out == ""
+
+
 def test_cli_setup_alias_installs_with_default_launcher(monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "install_codex_plus_plus", lambda options: calls.append(options))
@@ -266,6 +321,85 @@ def test_cli_setup_alias_installs_with_default_launcher(monkeypatch):
     assert len(calls) == 1
     assert calls[0].install_root is None
     assert calls[0].launcher_command is None
+
+
+def test_cli_check_update_prints_latest_release(monkeypatch, capsys):
+    class Release:
+        version = "v1.0.5.1"
+        url = "https://github.com/a110q/codexplus/releases/tag/v1.0.5.1"
+        body = "fixes"
+
+    monkeypatch.setattr(cli.updater, "is_source_tree_mode", lambda: False)
+    monkeypatch.setattr(cli.updater, "check_for_update", lambda: Release())
+
+    exit_code = cli.main(["check-update"])
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "发现新版本 v1.0.5.1" in output
+    assert "codexplus/releases/tag/v1.0.5.1" in output
+
+
+def test_cli_check_update_reports_current_version(monkeypatch, capsys):
+    monkeypatch.setattr(cli.updater, "check_for_update", lambda: None)
+    monkeypatch.setattr(cli.updater, "is_source_tree_mode", lambda: False)
+
+    exit_code = cli.main(["check-update"])
+
+    assert exit_code == 0
+    assert "当前已是最新版本" in capsys.readouterr().out
+
+
+def test_cli_check_update_reports_source_tree_migration_mode(monkeypatch, capsys):
+    monkeypatch.setattr(cli.updater, "is_source_tree_mode", lambda: True)
+    monkeypatch.setattr(cli.updater, "check_for_update", lambda: (_ for _ in ()).throw(AssertionError("should not check release version")))
+
+    exit_code = cli.main(["check-update"])
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "源码目录运行" in output
+    assert "update" in output
+
+
+def test_cli_update_migrates_source_tree_to_release_install(monkeypatch, capsys):
+    class Release:
+        version = "v1.0.5.1"
+        url = "https://github.com/a110q/codexplus/releases/tag/v1.0.5.1"
+        body = "fixes"
+        asset_name = "CodexPlusPlus.zip"
+
+    calls = []
+    monkeypatch.setattr(cli.updater, "is_source_tree_mode", lambda: True)
+    monkeypatch.setattr(cli.updater, "fetch_latest_release", lambda: Release())
+    monkeypatch.setattr(cli.updater, "perform_update", lambda release: calls.append(release) or object())
+
+    exit_code = cli.main(["update"])
+
+    assert exit_code == 0
+    assert calls[0].version == "v1.0.5.1"
+    output = capsys.readouterr().out
+    assert "源码目录运行" in output
+    assert "迁移到 Release 安装" in output
+    assert "更新完成" in output
+
+
+def test_cli_update_installs_latest_release(monkeypatch, tmp_path, capsys):
+    class Release:
+        version = "v1.0.5.1"
+        url = "https://github.com/a110q/codexplus/releases/tag/v1.0.5.1"
+        body = "fixes"
+
+    calls = []
+    monkeypatch.setattr(cli.updater, "is_source_tree_mode", lambda: False)
+    monkeypatch.setattr(cli.updater, "check_for_update", lambda: Release())
+    monkeypatch.setattr(cli.updater, "perform_update", lambda release: calls.append(release) or object())
+
+    exit_code = cli.main(["update"])
+
+    assert exit_code == 0
+    assert calls[0].version == "v1.0.5.1"
+    assert "更新完成" in capsys.readouterr().out
 
 
 def test_cli_remove_alias_uninstalls_with_default_options(monkeypatch):
@@ -313,3 +447,12 @@ def test_wait_for_shutdown_waits_for_popen_like_process():
     assert proc.waited is True
     assert server.shutdown_called is True
     assert server.server_close_called is True
+
+
+def test_is_macos_codex_running_uses_ps_comm(monkeypatch):
+    class Result:
+        stdout = "123 /Applications/Codex.app/Contents/MacOS/Codex --remote-debugging-port=9229\n456 /usr/bin/other\n"
+
+    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: Result())
+
+    assert cli.is_macos_codex_running() is True

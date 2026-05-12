@@ -32,5 +32,5 @@ class ConfirmedHttpDeleteAdapter:
         return DeleteResult(
             DeleteStatus.SERVER_DELETED,
             session.session_id,
-            "Deleted through confirmed server/app API",
+            "已通过服务器接口删除",
         )

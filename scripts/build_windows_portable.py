@@ -198,7 +198,7 @@ Usage:
 2. Double-click Codex++.exe.
 3. Codex App must already be installed on Windows.
 
-Codex++.exe launches the same codex_session_delete package and renderer-inject.js used by the macOS app bundle, so the Codex++ menu, plugin unlock toggle, special plugin install toggle, session delete button, confirmation, and undo behavior stay aligned across macOS and Windows.
+Codex++.exe launches the same codex_session_delete package, assets, user scripts, and renderer-inject.js used by the macOS app bundle, so the Codex++ menu and features stay aligned across macOS and Windows.
 
 Logs:
 %USERPROFILE%\\.codex-session-delete\\launcher.log

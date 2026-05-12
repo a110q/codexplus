@@ -1,13 +1,45 @@
 (() => {
   const helperBase = window.__CODEX_SESSION_DELETE_HELPER__ || "http://127.0.0.1:57321";
   const buttonClass = "codex-delete-button";
+  const exportButtonClass = "codex-export-button";
+  const projectMoveButtonClass = "codex-project-move-button";
+  const projectMoveOverlayClass = "codex-project-move-overlay";
+  const actionButtonClass = "codex-session-action-button";
+  const actionGroupClass = "codex-session-actions";
+  const projectMoveProjectionKey = "codexProjectMoveProjection";
+  const legacyProjectMoveOverridesKey = "codexProjectMoveOverrides";
+  const projectMoveProjectionTtlMs = 24 * 60 * 60 * 1000;
+  const projectMoveProjectionSettleMs = 5 * 60 * 1000;
+  const projectMoveRefreshDelaysMs = [50, 250, 750, 1500];
+  const chatsSortRefreshIntervalMs = 1500;
+  const chatsSortDbRefreshIntervalMs = 5000;
   const styleId = "codex-delete-style";
-  const codexDeleteStyleVersion = "4";
+  const codexDeleteStyleVersion = "6";
   const codexPlusMenuId = "codex-plus-menu";
-  const codexDeleteVersion = "5";
+  const codexDeleteVersion = "6";
+  const codexExportVersion = "1";
+  const codexProjectMoveVersion = "1";
+  const codexActionGroupVersion = "2";
+  const codexArchiveRowActionsVersion = "1";
   const codexArchiveDeleteAllVersion = "2";
-  const codexPlusVersion = "1.0.1";
+  const codexPlusVersion = "1.0.5.1";
   const codexPlusSettingsKey = "codexPlusSettings";
+  window.__codexProjectMoveRuntimeId = (window.__codexProjectMoveRuntimeId || 0) + 1;
+  const codexProjectMoveRuntimeId = window.__codexProjectMoveRuntimeId;
+  clearTimeout(window.__codexProjectMoveProjectionTimer);
+  clearTimeout(window.__codexProjectMoveChatsSortTimer);
+  window.__codexProjectMoveProjectionTimer = null;
+  window.__codexProjectMoveChatsSortTimer = null;
+  const selectors = {
+    sidebarThread: "[data-app-action-sidebar-thread-id]",
+    threadTitle: "[data-thread-title]",
+    appHeader: ".app-header-tint",
+    nativeMenuBar: ".flex.items-center.gap-0\\.5, [class*=\"flex items-center gap-0.5\"]",
+    archiveNav: 'button[aria-label="已归档对话"], button[aria-label="Archived conversations"]',
+    disabledInstallButton: 'button:disabled.w-full.justify-center, [role="button"][aria-disabled="true"].cursor-not-allowed',
+    pluginNavButton: 'nav[role="navigation"] button.h-token-nav-row.w-full',
+    pluginSvgPath: 'svg path[d^="M7.94562 14.0277"]',
+  };
 
   function installStyle() {
     const existingStyle = document.getElementById(styleId);
@@ -17,24 +49,92 @@
     style.id = styleId;
     style.dataset.codexDeleteStyleVersion = codexDeleteStyleVersion;
     style.textContent = `
-      .${buttonClass} {
+      .${actionGroupClass} {
         position: absolute;
         right: 28px;
         top: 50%;
         transform: translateY(-50%);
         z-index: 20;
         opacity: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .${actionButtonClass},
+      .codex-archive-row-button {
         border: 1px solid #ef4444;
         border-radius: 6px;
-        background: #fee2e2;
-        color: #991b1b;
+        background: #f3f4f6;
+        color: #374151;
         font-size: 12px;
         line-height: 16px;
         padding: 1px 6px;
         cursor: pointer;
       }
-      [data-codex-delete-row="true"]:hover .${buttonClass} { opacity: 1; }
-      [data-codex-delete-row="true"].codex-archive-confirm-visible .${buttonClass} { right: 66px; }
+      .codex-archive-row-button {
+        border-radius: 7px;
+        font: 12px system-ui, sans-serif;
+        line-height: 16px;
+        padding: 3px 8px;
+      }
+      .${buttonClass},
+      .codex-archive-row-button.${buttonClass} {
+        border-color: #ef4444;
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .${exportButtonClass},
+      .codex-archive-row-button.${exportButtonClass} {
+        border-color: #93c5fd;
+        background: #dbeafe;
+        color: #1d4ed8;
+      }
+      .${projectMoveButtonClass} {
+        border-color: #10a37f;
+        background: #d1fae5;
+        color: #065f46;
+      }
+      [data-codex-delete-row="true"]:hover .${actionGroupClass} { opacity: 1; }
+      [data-codex-delete-row="true"].codex-archive-confirm-visible .${actionGroupClass} { right: 66px; }
+      .${projectMoveOverlayClass} {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483200;
+        background: rgba(15,23,42,.28);
+      }
+      .codex-project-move-panel {
+        position: fixed;
+        width: min(360px, calc(100vw - 32px));
+        max-height: min(520px, calc(100vh - 32px));
+        overflow: hidden;
+        border: 1px solid rgba(15,23,42,.14);
+        border-radius: 10px;
+        background: #ffffff;
+        color: #111827;
+        font: 13px system-ui, sans-serif;
+        box-shadow: 0 18px 60px rgba(15,23,42,.25);
+      }
+      .codex-project-move-header { border-bottom: 1px solid #e5e7eb; padding: 10px 12px; }
+      .codex-project-move-title { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .codex-project-move-list { max-height: min(440px, calc(100vh - 110px)); overflow-y: auto; padding: 6px; }
+      .codex-project-move-item {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: #111827;
+        padding: 8px 9px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .codex-project-move-item:hover,
+      .codex-project-move-item:focus-visible { background: #f3f4f6; outline: none; }
+      .codex-project-move-item-title { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .codex-project-move-item-path { margin-top: 2px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .codex-project-move-empty { padding: 18px 12px; color: #6b7280; text-align: center; }
+      .codex-project-move-hidden { display: none !important; }
+      [data-codex-project-move-injected-list="true"] { display: flex; flex-direction: column; }
       .codex-archive-delete-all {
         border: 1px solid #ef4444;
         border-radius: 7px;
@@ -108,17 +208,34 @@
       #${codexPlusMenuId}.codex-plus-menu-floating {
         position: fixed;
         top: 0;
-        left: 240px;
+        right: 140px;
+        left: auto;
         z-index: 2147483645;
         height: 30px;
         color: #d1d5db;
         font: 13px system-ui, sans-serif;
+        text-align: right;
+        pointer-events: auto;
+        -webkit-app-region: no-drag;
       }
       #${codexPlusMenuId} {
         display: inline-flex;
         align-items: center;
         height: 100%;
         flex: 0 0 auto;
+        pointer-events: auto;
+        -webkit-app-region: no-drag;
+      }
+      .codex-plus-trigger {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        height: 100%;
+        padding: 0 8px;
+        cursor: pointer;
+        pointer-events: auto;
+        -webkit-app-region: no-drag;
       }
       .codex-plus-modal-overlay {
         position: fixed;
@@ -144,7 +261,11 @@
         justify-content: space-between;
         padding: 18px 20px 10px;
       }
-      .codex-plus-modal-title { font-size: 18px; font-weight: 650; }
+      .codex-plus-modal-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 650; }
+      .codex-plus-backend-indicator { width: 9px; height: 9px; border-radius: 999px; background: #a1a1aa; display: inline-block; }
+      .codex-plus-backend-indicator[data-status="ok"] { background: #34d399; box-shadow: 0 0 8px rgba(52,211,153,.75); }
+      .codex-plus-backend-indicator[data-status="failed"] { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,.75); }
+      .codex-plus-backend-indicator[data-status="checking"] { background: #fbbf24; }
       .codex-plus-modal-close {
         border: 0;
         background: transparent;
@@ -183,12 +304,32 @@
       .codex-plus-toggle[data-enabled="true"] { background: #10a37f; }
       .codex-plus-toggle[data-enabled="true"] span { transform: translateX(18px); }
       .codex-plus-about { color: #a1a1aa; line-height: 1.5; }
+      .codex-plus-tabs { display: flex; gap: 8px; padding: 0 20px 8px; }
+      .codex-plus-tab-button { border: 1px solid rgba(255,255,255,.14); border-radius: 999px; background: transparent; color: #d1d5db; font: 12px system-ui, sans-serif; padding: 5px 10px; }
+      .codex-plus-tab-button[data-active="true"] { background: #10a37f; color: white; border-color: #10a37f; }
+      .codex-plus-panel[hidden] { display: none; }
+      .codex-plus-action-button { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
+      .codex-plus-backend-status { display: grid; gap: 4px; min-width: 132px; justify-items: end; }
+      .codex-plus-backend-label { color: #a1a1aa; font-size: 12px; }
+      .codex-plus-backend-label[data-status="ok"] { color: #34d399; }
+      .codex-plus-backend-label[data-status="failed"] { color: #f87171; }
+      .codex-plus-backend-repair { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
+      .codex-plus-backend-repair[hidden] { display: none; }
+      .codex-plus-user-script-warning { margin-top: 4px; color: #fbbf24; font-size: 12px; }
+      .codex-plus-user-script-dirs { margin-top: 6px; color: #a1a1aa; font-size: 11px; line-height: 1.4; word-break: break-all; }
+      .codex-plus-user-script-list { margin-top: 8px; display: grid; gap: 6px; }
+      .codex-plus-user-script-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 6px 8px; }
+      .codex-plus-user-script-name { font-size: 12px; }
+      .codex-plus-user-script-meta { margin-top: 2px; color: #a1a1aa; font-size: 11px; }
+      .codex-plus-user-script-error { margin-top: 2px; color: #f87171; font-size: 11px; word-break: break-all; }
+      .codex-plus-user-script-actions { display: grid; justify-items: end; gap: 8px; min-width: 120px; }
+      .codex-plus-user-script-reload { border: 1px solid rgba(255,255,255,.18); border-radius: 7px; background: #3f3f46; color: #f3f4f6; font: 12px system-ui, sans-serif; padding: 6px 8px; }
     `;
     document.documentElement.appendChild(style);
   }
 
   function defaultCodexPlusSettings() {
-    return { pluginEntryUnlock: true, forcePluginInstall: true, sessionDelete: true };
+    return { pluginEntryUnlock: true, forcePluginInstall: true, sessionDelete: true, markdownExport: true, projectMove: true, nativeMenuPlacement: true };
   }
 
   function codexPlusSettings() {
@@ -213,6 +354,98 @@
     });
   }
 
+  let codexPlusUserScripts = { enabled: true, builtin_dir: "", user_dir: "", scripts: [] };
+  let codexPlusBackendStatus = { status: "checking", message: "正在检查后端…" };
+
+  function renderBackendStatus() {
+    const status = codexPlusBackendStatus.status || "failed";
+    const label = document.querySelector("[data-codex-backend-status]");
+    if (label) {
+      label.dataset.status = status;
+      label.textContent = codexPlusBackendStatus.message || (status === "ok" ? "后端已连接" : "后端已断开");
+    }
+    document.querySelectorAll("[data-codex-backend-indicator]").forEach((indicator) => {
+      indicator.dataset.status = status;
+      indicator.title = status === "ok" ? "后端已连接" : status === "checking" ? "正在检查后端" : "后端已断开";
+    });
+    const repair = document.querySelector("[data-codex-backend-repair]");
+    if (repair) repair.hidden = status === "ok" || status === "checking";
+  }
+
+  function withBackendTimeout(request) {
+    return Promise.race([
+      request,
+      new Promise((resolve) => setTimeout(() => resolve({ status: "failed", message: "后端已断开" }), 2000)),
+    ]);
+  }
+
+  async function checkBackendStatus() {
+    codexPlusBackendStatus = await withBackendTimeout(postJson("/backend/status", {}));
+    renderBackendStatus();
+  }
+
+  async function repairBackend() {
+    codexPlusBackendStatus = { status: "checking", message: "正在修复后端…" };
+    renderBackendStatus();
+    try {
+      codexPlusBackendStatus = await postJson("/backend/repair", {});
+    } catch (error) {
+      codexPlusBackendStatus = { status: "failed", message: "后端修复失败" };
+    }
+    renderBackendStatus();
+  }
+
+  function scheduleBackendHeartbeat() {
+    clearInterval(window.__codexPlusBackendHeartbeat);
+    window.__codexPlusBackendHeartbeat = setInterval(checkBackendStatus, 5000);
+    checkBackendStatus();
+  }
+
+  function userScriptStatusLabel(status) {
+    return { loaded: "已加载", failed: "失败", disabled: "已禁用", not_loaded: "未加载", loading: "加载中" }[status] || status || "未知";
+  }
+
+  function renderUserScripts() {
+    const enabledToggle = document.querySelector("[data-codex-user-scripts-enabled]");
+    if (enabledToggle) enabledToggle.dataset.enabled = String(!!codexPlusUserScripts.enabled);
+    const dirs = document.querySelector("[data-codex-user-script-dirs]");
+    if (dirs) dirs.textContent = `内置：${codexPlusUserScripts.builtin_dir || "未找到"}  用户：${codexPlusUserScripts.user_dir || "未找到"}`;
+    const list = document.querySelector("[data-codex-user-script-list]");
+    if (!list) return;
+    if (!codexPlusUserScripts.scripts?.length) {
+      list.textContent = "未发现用户脚本。";
+      return;
+    }
+    list.innerHTML = codexPlusUserScripts.scripts.map((script) => `
+      <div class="codex-plus-user-script-item">
+        <div>
+          <div class="codex-plus-user-script-name">${escapeHtml(script.name || script.key)}</div>
+          <div class="codex-plus-user-script-meta">${script.source === "builtin" ? "内置" : "用户"} · ${userScriptStatusLabel(script.status)}</div>
+          ${script.error ? `<div class="codex-plus-user-script-error">${escapeHtml(script.error)}</div>` : ""}
+        </div>
+        <button type="button" class="codex-plus-toggle" data-codex-user-script-key="${escapeHtml(script.key)}" data-enabled="${String(!!script.enabled)}"><span></span></button>
+      </div>
+    `).join("");
+  }
+
+  async function loadUserScripts(path = "/user-scripts/list", payload = {}) {
+    const result = await postJson(path, payload);
+    if (result?.scripts) {
+      codexPlusUserScripts = result;
+      renderUserScripts();
+    }
+  }
+
+  function selectCodexPlusTab(tab) {
+    document.querySelectorAll("[data-codex-plus-tab]").forEach((button) => {
+      button.dataset.active = String(button.getAttribute("data-codex-plus-tab") === tab);
+    });
+    document.querySelectorAll("[data-codex-plus-panel]").forEach((panel) => {
+      panel.hidden = panel.getAttribute("data-codex-plus-panel") !== tab;
+    });
+    if (tab === "userScripts") loadUserScripts();
+  }
+
   function openCodexPlusModal() {
     document.querySelectorAll(".codex-plus-modal-overlay").forEach((node) => node.remove());
     document.querySelectorAll('[data-codex-plus-dialog="true"]').forEach((node) => node.remove());
@@ -221,28 +454,72 @@
     overlay.innerHTML = `
       <div class="codex-plus-modal-content" role="dialog" aria-modal="true" aria-label="Codex++">
         <div class="codex-plus-modal-header">
-          <div class="codex-plus-modal-title">Codex++ ${codexPlusVersion}</div>
+          <div class="codex-plus-modal-title"><span class="codex-plus-backend-indicator" data-codex-backend-indicator="true" data-status="checking"></span><span>Codex++ ${codexPlusVersion}</span></div>
           <button type="button" class="codex-plus-modal-close" aria-label="关闭">×</button>
         </div>
+        <div class="codex-plus-tabs" role="tablist" aria-label="Codex++">
+          <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="home" data-active="true">主页</button>
+          <button type="button" class="codex-plus-tab-button" data-codex-plus-tab="userScripts" data-active="false">用户脚本</button>
+        </div>
         <div class="codex-plus-modal-body">
-          <div class="codex-plus-row">
-            <div><div class="codex-plus-row-title">插件选项解锁</div><div class="codex-plus-row-description">让 API Key 模式显示并启用插件入口。</div></div>
-            <button type="button" class="codex-plus-toggle" data-codex-plus-setting="pluginEntryUnlock"><span></span></button>
+          <div class="codex-plus-panel" data-codex-plus-panel="home">
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">后端连接</div><div class="codex-plus-row-description">每 5 秒检查一次 launcher 后端状态；断开时可尝试修复后端运行。</div></div>
+              <div class="codex-plus-backend-status">
+                <div class="codex-plus-backend-label" data-codex-backend-status="true" data-status="checking">正在检查后端…</div>
+                <button type="button" class="codex-plus-backend-repair" data-codex-backend-repair="true" hidden>修复后端运行</button>
+              </div>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">插件选项解锁</div><div class="codex-plus-row-description">让 API Key 模式显示并启用插件入口。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="pluginEntryUnlock"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">特殊插件强制安装</div><div class="codex-plus-row-description">解除 App unavailable / 应用不可用导致的前端安装禁用。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="forcePluginInstall"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">会话删除</div><div class="codex-plus-row-description">在会话列表悬停显示删除按钮，并支持撤销。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="sessionDelete"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">Markdown 导出</div><div class="codex-plus-row-description">在会话列表显示导出按钮，按本地 rollout 导出带时间戳的 Markdown。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="markdownExport"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">会话项目移动</div><div class="codex-plus-row-description">在会话列表悬停显示移动按钮，可移动到普通对话或其他本地项目。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="projectMove"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">原生菜单栏位置</div><div class="codex-plus-row-description">把 Codex++ 菜单插入顶部原生菜单栏；默认关闭以避免页面重渲染冲突。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="nativeMenuPlacement"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">打开 DevTools</div><div class="codex-plus-row-description">打开当前 Codex 页面开发者工具，方便查看用户脚本报错。</div></div>
+              <button type="button" class="codex-plus-action-button" data-codex-open-devtools="true">打开 DevTools</button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">关于 Codex++</div><div class="codex-plus-about">Codex++ 是通过外部 launcher 注入的增强菜单，不修改 Codex App 原始安装文件。<br>GitHub: <a href="https://github.com/a110q/codexplus" target="_blank" rel="noreferrer">https://github.com/a110q/codexplus</a></div></div>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">提出问题</div><div class="codex-plus-row-description">打开 GitHub Issues 反馈问题或建议。</div></div>
+              <button type="button" class="codex-plus-issue-button" data-codex-plus-issue="true">提出问题</button>
+            </div>
           </div>
-          <div class="codex-plus-row">
-            <div><div class="codex-plus-row-title">特殊插件强制安装</div><div class="codex-plus-row-description">解除 App unavailable / 应用不可用导致的前端安装禁用。</div></div>
-            <button type="button" class="codex-plus-toggle" data-codex-plus-setting="forcePluginInstall"><span></span></button>
-          </div>
-          <div class="codex-plus-row">
-            <div><div class="codex-plus-row-title">会话删除</div><div class="codex-plus-row-description">在会话列表悬停显示删除按钮，并支持撤销。</div></div>
-            <button type="button" class="codex-plus-toggle" data-codex-plus-setting="sessionDelete"><span></span></button>
-          </div>
-          <div class="codex-plus-row">
-            <div><div class="codex-plus-row-title">关于 Codex++</div><div class="codex-plus-about">Codex++ 是通过外部 launcher 注入的增强菜单，不修改 Codex App 原始安装文件。<br>GitHub: <a href="https://github.com/BigPizzaV3/CodexPlusPlus" target="_blank" rel="noreferrer">https://github.com/BigPizzaV3/CodexPlusPlus</a></div></div>
-          </div>
-          <div class="codex-plus-row">
-            <div><div class="codex-plus-row-title">提出问题</div><div class="codex-plus-row-description">打开 GitHub Issues 反馈问题或建议。</div></div>
-            <button type="button" class="codex-plus-issue-button" data-codex-plus-issue="true">提出问题</button>
+          <div class="codex-plus-panel" data-codex-plus-panel="userScripts" hidden>
+            <div class="codex-plus-row" data-codex-user-scripts-section="true">
+              <div>
+                <div class="codex-plus-row-title">用户脚本</div>
+                <div class="codex-plus-row-description">启用用户脚本：自动加载内置目录和用户配置目录中的 .js 文件。</div>
+                <div class="codex-plus-user-script-warning">禁用后需重载页面或重启 Codex++ 才能完全移除已执行效果。</div>
+                <div class="codex-plus-user-script-dirs" data-codex-user-script-dirs="true">正在读取脚本目录…</div>
+                <div class="codex-plus-user-script-list" data-codex-user-script-list="true">正在读取用户脚本…</div>
+              </div>
+              <div class="codex-plus-user-script-actions">
+                <button type="button" class="codex-plus-toggle" data-codex-user-scripts-enabled="true"><span></span></button>
+                <button type="button" class="codex-plus-user-script-reload" data-codex-user-scripts-reload="true">重新加载用户脚本</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -252,10 +529,37 @@
         overlay.remove();
         return;
       }
+      const tabButton = event.target.closest("[data-codex-plus-tab]");
+      if (tabButton) {
+        selectCodexPlusTab(tabButton.getAttribute("data-codex-plus-tab"));
+        return;
+      }
+      if (event.target.closest("[data-codex-open-devtools]")) {
+        postJson("/devtools/open", {});
+        return;
+      }
+      if (event.target.closest("[data-codex-backend-repair]")) {
+        repairBackend();
+        return;
+      }
       const issueButton = event.target.closest("[data-codex-plus-issue]");
       if (issueButton) {
-        const issueUrl = "https://github.com/BigPizzaV3/CodexPlusPlus/issues";
+        const issueUrl = "https://github.com/a110q/codexplus/issues";
         window.open(issueUrl, "_blank");
+        return;
+      }
+      const userScriptsEnabled = event.target.closest("[data-codex-user-scripts-enabled]");
+      if (userScriptsEnabled) {
+        loadUserScripts("/user-scripts/set-enabled", { enabled: userScriptsEnabled.dataset.enabled !== "true" });
+        return;
+      }
+      const userScriptToggle = event.target.closest("[data-codex-user-script-key]");
+      if (userScriptToggle) {
+        loadUserScripts("/user-scripts/set-script-enabled", { key: userScriptToggle.getAttribute("data-codex-user-script-key"), enabled: userScriptToggle.dataset.enabled !== "true" });
+        return;
+      }
+      if (event.target.closest("[data-codex-user-scripts-reload]")) {
+        loadUserScripts("/user-scripts/reload", {});
         return;
       }
       const toggle = event.target.closest("[data-codex-plus-setting]");
@@ -265,11 +569,14 @@
     }, true);
     document.body.appendChild(overlay);
     renderCodexPlusMenu();
+    renderBackendStatus();
+    loadUserScripts();
   }
 
   function findNativeMenuInsertionPoint() {
-    const header = document.querySelector(".app-header-tint");
-    const menuBar = header?.querySelector(".flex.items-center.gap-0\\.5") || header?.querySelector('[class*="flex items-center gap-0.5"]');
+    if (!codexPlusSettings().nativeMenuPlacement) return null;
+    const header = document.querySelector(selectors.appHeader);
+    const menuBar = header?.querySelector(selectors.nativeMenuBar);
     if (!menuBar) return null;
     const buttons = Array.from(menuBar.querySelectorAll("button")).filter((button) => !button.closest(`#${codexPlusMenuId}`));
     return { parent: menuBar, before: buttons[buttons.length - 1]?.nextSibling || null, nativeButtonClass: buttons[buttons.length - 1]?.className || "" };
@@ -317,6 +624,11 @@
     const trigger = document.createElement("button");
     trigger.type = "button";
     trigger.textContent = `Codex++ ${codexPlusVersion}`;
+    const indicator = document.createElement("span");
+    indicator.className = "codex-plus-backend-indicator";
+    indicator.dataset.codexBackendIndicator = "true";
+    indicator.dataset.status = codexPlusBackendStatus.status || "checking";
+    trigger.prepend(indicator);
     const nativeButtonClass = insertionPoint?.nativeButtonClass || "codex-plus-trigger";
     configureCodexPlusTrigger(menu, trigger, nativeButtonClass);
     menu.appendChild(trigger);
@@ -354,10 +666,25 @@
     return true;
   }
 
+  function pluginEntryButton() {
+    const byIcon = document.querySelector(`${selectors.pluginNavButton} ${selectors.pluginSvgPath}`)?.closest("button");
+    if (byIcon) return byIcon;
+    return Array.from(document.querySelectorAll(selectors.pluginNavButton))
+      .find((button) => /^(插件|Plugins)(\s+-\s+.*)?$/i.test((button.textContent || "").trim())) || null;
+  }
+
+  function labelUnlockedPluginEntry(button) {
+    const labelTextNode = Array.from(button.querySelectorAll("span, div")).reverse()
+      .flatMap((node) => Array.from(node.childNodes))
+      .find((node) => node.nodeType === 3 && /^(插件|Plugins)( - 已解锁| - Unlocked)?$/i.test((node.nodeValue || "").trim()));
+    if (!labelTextNode) return;
+    const current = (labelTextNode.nodeValue || "").trim();
+    labelTextNode.nodeValue = /^Plugins/i.test(current) ? "Plugins - Unlocked" : "插件 - 已解锁";
+  }
+
   function enablePluginEntry() {
     if (!codexPlusSettings().pluginEntryUnlock) return;
-    const buttons = Array.from(document.querySelectorAll("button"));
-    const pluginButton = buttons.find((element) => /^(插件|Plugins)$/i.test((element.textContent || "").trim()));
+    const pluginButton = pluginEntryButton();
     if (!pluginButton) return;
     spoofChatGPTAuthMethod(pluginButton);
     pluginButton.disabled = false;
@@ -366,6 +693,7 @@
     pluginButton.querySelectorAll("*").forEach((node) => {
       node.style.display = "";
     });
+    labelUnlockedPluginEntry(pluginButton);
     const reactPropsKey = Object.keys(pluginButton).find((key) => key.startsWith("__reactProps"));
     if (reactPropsKey) {
       pluginButton[reactPropsKey].disabled = false;
@@ -377,24 +705,42 @@
     }, true);
   }
 
+  function pluginInstallCandidates() {
+    return Array.from(document.querySelectorAll(selectors.disabledInstallButton));
+  }
+
+  function installButtonLabel(element) {
+    return (element.textContent || "").trim();
+  }
+
+  function unblockButtonElement(button) {
+    button.disabled = false;
+    button.removeAttribute("disabled");
+    button.removeAttribute("aria-disabled");
+    button.classList.remove("disabled", "opacity-50", "cursor-not-allowed", "pointer-events-none");
+    button.style.pointerEvents = "auto";
+    button.tabIndex = 0;
+    const reactPropsKey = Object.keys(button).find((key) => key.startsWith("__reactProps"));
+    if (reactPropsKey) {
+      button[reactPropsKey].disabled = false;
+      button[reactPropsKey]["aria-disabled"] = false;
+    }
+  }
+
+  function labelForcedInstallButton(button) {
+    const textNode = Array.from(button.childNodes).find((node) => node.nodeType === 3 && (/^安装\s/.test((node.nodeValue || "").trim()) || /^Install\s/.test((node.nodeValue || "").trim()) || (node.nodeValue || "").trim() === "强制安装"));
+    if (textNode) {
+      textNode.nodeValue = "强制安装";
+    }
+  }
+
   function unblockPluginInstallButtons() {
     if (!codexPlusSettings().forcePluginInstall) return;
-    const unavailableLabels = ["App unavailable", "应用不可用"];
-    const pageText = document.body.textContent || "";
-    if (!unavailableLabels.some((label) => pageText.includes(label))) return;
-    document.querySelectorAll("button:disabled").forEach((button) => {
-      const text = (button.textContent || "").trim();
-      if (!/^安装\s/.test(text) && !/^Install\s/.test(text)) return;
-      button.disabled = false;
-      button.removeAttribute("disabled");
-      button.removeAttribute("aria-disabled");
-      button.classList.remove("disabled", "opacity-50", "cursor-not-allowed", "pointer-events-none");
-      button.style.pointerEvents = "auto";
-      const reactPropsKey = Object.keys(button).find((key) => key.startsWith("__reactProps"));
-      if (reactPropsKey) {
-        button[reactPropsKey].disabled = false;
-        button[reactPropsKey]["aria-disabled"] = false;
-      }
+    pluginInstallCandidates().forEach((button) => {
+      const text = installButtonLabel(button);
+      if (!/^安装\s/.test(text) && !/^Install\s/.test(text) && text !== "强制安装") return;
+      unblockButtonElement(button);
+      labelForcedInstallButton(button);
     });
   }
 
@@ -408,27 +754,29 @@
       if (cachedSessionRows.length > 0) return cachedSessionRows;
     }
 
-    const codexThreads = Array.from(document.querySelectorAll('[data-app-action-sidebar-thread-id]'));
-    if (codexThreads.length > 0) {
-      cachedSessionRows = codexThreads;
-      cachedSessionRowsAt = now;
-      return cachedSessionRows;
-    }
-
-    const candidates = Array.from(document.querySelectorAll("a[href*='session'], a[href*='conversation'], a[href*='thread'], button[data-testid*='session'], button[data-testid*='conversation'], button[data-testid*='thread'], [role='button'][data-testid*='session'], [role='button'][data-testid*='conversation'], [role='button'][data-testid*='thread'], li[data-testid*='session'], li[data-testid*='conversation'], li[data-testid*='thread']"));
-    cachedSessionRows = candidates.filter((element) => {
-      const text = (element.textContent || "").trim();
-      const href = element.getAttribute("href") || "";
-      const testId = element.getAttribute("data-testid") || "";
-      const hasSessionHint = /session|conversation|thread/i.test(href + " " + testId);
-      return text.length > 0 && text.length < 200 && hasSessionHint;
-    });
+    cachedSessionRows = Array.from(document.querySelectorAll(selectors.sidebarThread));
     cachedSessionRowsAt = now;
     return cachedSessionRows;
   }
 
+  function archivePageHintVisible() {
+    if (window.location.href.includes("archive")) return true;
+    if (document.querySelector('[data-codex-archive-page-row="true"], [data-codex-archive-delete-all]')) return true;
+    const archiveNav = document.querySelector(selectors.archiveNav);
+    if (archiveNav?.className?.includes?.("bg-token-list-hover-background")) return true;
+    return !!Array.from(document.querySelectorAll("h1, h2, h3")).find((element) => (element.textContent || "").trim() === "已归档对话");
+  }
+
+  function archiveRowFromUnarchiveButton(button) {
+    return button.closest('[data-codex-archive-page-row="true"]')
+      || button.closest('[role="listitem"], [role="row"]')
+      || button.closest(".flex.w-full.items-center.justify-between")
+      || button.parentElement;
+  }
+
   function archivedPageRows() {
-    const rows = Array.from(document.querySelectorAll("button")).filter((button) => (button.textContent || "").trim() === "取消归档").map((button) => button.closest(".flex.w-full.items-center.justify-between") || button.parentElement).filter(Boolean);
+    if (!archivePageHintVisible()) return [];
+    const rows = Array.from(document.querySelectorAll("button")).filter((button) => (button.textContent || "").trim() === "取消归档").map(archiveRowFromUnarchiveButton).filter(Boolean);
     rows.forEach((row) => {
       row.dataset.codexArchivePageRow = "true";
       row.setAttribute("data-codex-archive-page-row", "true");
@@ -437,15 +785,17 @@
   }
 
   function archivedSessionRows() {
+    if (!archivePageHintVisible()) return [];
     return sessionRows().filter((row) => row.querySelector('button[aria-label="取消归档对话"]') || row.outerHTML.includes("取消归档") || row.outerHTML.includes("unarchive"));
   }
 
   function archivedRows() {
+    if (!archivePageHintVisible()) return [];
     return [...archivedSessionRows(), ...archivedPageRows()];
   }
 
   function archivedPageVisible() {
-    return archivedRows().length > 0 || window.location.href.includes("archive") || (document.body.textContent || "").includes("已归档对话");
+    return archivePageHintVisible() && archivedRows().length > 0;
   }
 
   function sessionRefFromRow(row) {
@@ -454,16 +804,852 @@
     const codexThreadId = row.getAttribute("data-app-action-sidebar-thread-id") || "";
     const fallbackId = row.getAttribute("data-session-id") || row.getAttribute("data-testid") || "";
     const sessionId = codexThreadId || (idMatch && idMatch[1]) || fallbackId;
-    const titleNode = row.querySelector('[data-thread-title]');
-    const title = ((titleNode || row).textContent || "Untitled session").replace("删除", "").trim().slice(0, 160);
+    const titleNode = row.querySelector(`${selectors.threadTitle}, .truncate.select-none, .truncate.text-base`);
+    const rawTitle = (titleNode?.textContent || (titleNode ? "" : (row.textContent || "Untitled session")));
+    const title = (titleNode ? rawTitle : rawTitle.replace(/\s*(导出|删除|移动|移出项目)(\s*(导出|删除|移动|移出项目))*$/g, "")).trim().slice(0, 160);
     return { session_id: sessionId, title };
   }
 
   async function postJson(path, payload) {
     if (!window.__codexSessionDeleteBridge) {
-      return { status: "failed", message: "Delete bridge unavailable. Restart the launcher." };
+      return { status: "failed", message: "桥接不可用，请重启启动器" };
     }
     return await window.__codexSessionDeleteBridge(path, payload);
+  }
+
+  function downloadMarkdown(filename, markdown) {
+    if (!filename || typeof markdown !== "string") {
+      throw new Error("导出结果不完整");
+    }
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  let codexStateApiPromise = null;
+  let chatsSortInFlight = false;
+  let chatsSortSignature = "";
+  let chatsSortLastFetchAt = 0;
+
+  async function codexStateApi() {
+    codexStateApiPromise = codexStateApiPromise || import("./assets/vscode-api-Dc9pX2Bc.js");
+    const api = await codexStateApiPromise;
+    if (typeof api.n !== "function") throw new Error("Codex 状态 API 不可用");
+    return api.n;
+  }
+
+  async function codexStateCall(method, params) {
+    const call = await codexStateApi();
+    return await call(method, params);
+  }
+
+  async function getCodexGlobalState(key) {
+    const result = await codexStateCall("get-global-state", { params: { key } });
+    return result && Object.prototype.hasOwnProperty.call(result, "value") ? result.value : result;
+  }
+
+  async function setCodexGlobalState(key, value) {
+    return await codexStateCall("set-global-state", { params: { key, value } });
+  }
+
+  function objectGlobalState(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+  }
+
+  function uniqueValues(values) {
+    return Array.from(new Set(values.filter((value) => typeof value === "string" && value.trim().length > 0)));
+  }
+
+  function threadIdVariants(sessionId) {
+    if (typeof sessionId !== "string" || !sessionId.trim()) return [];
+    const id = sessionId.trim();
+    const bareId = id.startsWith("local:") ? id.slice("local:".length) : id;
+    return uniqueValues([id, bareId, `local:${bareId}`]);
+  }
+
+  function projectMoveSessionKey(sessionId) {
+    const variants = threadIdVariants(sessionId);
+    const bareId = variants.find((id) => !id.startsWith("local:"));
+    return bareId || variants[0] || "";
+  }
+
+  function uuidV7TimestampMs(sessionId) {
+    const id = projectMoveSessionKey(sessionId).replaceAll("-", "");
+    if (!/^[0-9a-fA-F]{12}/.test(id)) return 0;
+    const timestamp = Number.parseInt(id.slice(0, 12), 16);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  function numericTimestamp(value) {
+    const timestamp = Number(value);
+    return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+  }
+
+  function timestampValueToMs(value) {
+    const timestamp = numericTimestamp(value);
+    if (!timestamp) return 0;
+    return timestamp < 1000000000000 ? timestamp * 1000 : timestamp;
+  }
+
+  function sortMsForSession(sessionId, preferredValue) {
+    return numericTimestamp(preferredValue) || uuidV7TimestampMs(sessionId);
+  }
+
+  function timestampMsFromPayload(payload) {
+    return numericTimestamp(payload?.updated_at_ms) || timestampValueToMs(payload?.updated_at) || numericTimestamp(payload?.created_at_ms);
+  }
+
+  function relativeTimeLabel(timestampMs, nowMs = Date.now()) {
+    const timestamp = numericTimestamp(timestampMs);
+    if (!timestamp) return "";
+    const elapsedSeconds = Math.max(0, Math.floor((nowMs - timestamp) / 1000));
+    if (elapsedSeconds < 60) return "刚刚";
+    const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+    if (elapsedMinutes < 60) return `${elapsedMinutes} 分`;
+    const elapsedHours = Math.floor(elapsedMinutes / 60);
+    if (elapsedHours < 24) return `${elapsedHours} 小时`;
+    const elapsedDays = Math.floor(elapsedHours / 24);
+    if (elapsedDays < 7) return `${elapsedDays} 天`;
+    const elapsedWeeks = Math.floor(elapsedDays / 7);
+    if (elapsedWeeks < 5) return `${elapsedWeeks} 周`;
+    const elapsedMonths = Math.floor(elapsedDays / 30);
+    if (elapsedMonths < 12) return `${Math.max(1, elapsedMonths)} 月`;
+    return `${Math.floor(elapsedDays / 365)} 年`;
+  }
+
+  function normalizeWorkspacePath(path) {
+    const normalized = String(path || "").trim().replace(/\\/g, "/").replace(/\/+$/, "");
+    return normalized || String(path || "").trim();
+  }
+
+  function sameWorkspacePath(left, right) {
+    const leftPath = normalizeWorkspacePath(left);
+    const rightPath = normalizeWorkspacePath(right);
+    return !!leftPath && !!rightPath && leftPath === rightPath;
+  }
+
+  function displayProjectName(path) {
+    const trimmed = String(path || "").replace(/\/+$/, "");
+    return trimmed.split(/[\\/]+/).filter(Boolean).pop() || trimmed || "未命名项目";
+  }
+
+  function normalizeProjectLabel(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function projectsSection() {
+    return document.querySelector('[data-app-action-sidebar-section-heading="Projects"]');
+  }
+
+  function chatsSection() {
+    return document.querySelector('[data-app-action-sidebar-section-heading="Chats"]');
+  }
+
+  function projectRowListItem(projectRow) {
+    return projectRow.closest?.('[role="listitem"][aria-label]') || projectRow.closest?.('[role="listitem"]') || projectRow;
+  }
+
+  function nativeProjectTargets() {
+    const section = projectsSection();
+    const seen = new Set();
+    const targets = [];
+    Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]')).forEach((row) => {
+      if (section && !section.contains(row)) return;
+      const path = row.getAttribute("data-app-action-sidebar-project-id") || "";
+      const normalizedPath = normalizeWorkspacePath(path);
+      if (!normalizedPath || seen.has(normalizedPath)) return;
+      const label = row.getAttribute("data-app-action-sidebar-project-label") || row.getAttribute("aria-label") || displayProjectName(path);
+      seen.add(normalizedPath);
+      targets.push({ kind: "project", label: String(label || displayProjectName(path)), description: path, path, normalizedPath, row, listItem: projectRowListItem(row) });
+    });
+    return targets;
+  }
+
+  function serializableProjectTarget(target) {
+    return { kind: target.kind, label: target.label, description: target.description, path: target.path, normalizedPath: target.normalizedPath || normalizeWorkspacePath(target.path) };
+  }
+
+  function projectMoveTargets() {
+    return [
+      { kind: "projectless", label: "普通对话", description: "不属于任何项目", path: "", normalizedPath: "" },
+      ...nativeProjectTargets().map(serializableProjectTarget),
+    ];
+  }
+
+  function readLegacyProjectMoveProjection() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(legacyProjectMoveOverridesKey) || "{}");
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      const now = Date.now();
+      const next = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (!value || typeof value !== "object" || !value.targetCwd) continue;
+        const sessionId = projectMoveSessionKey(value.sessionId || key);
+        if (!sessionId) continue;
+        next[sessionId] = {
+          sessionId,
+          targetKind: "project",
+          targetCwd: String(value.targetCwd),
+          targetLabel: String(value.targetLabel || displayProjectName(value.targetCwd)),
+          title: String(value.title || ""),
+          sortMs: sortMsForSession(sessionId, value.sortMs || value.updatedAtMs || value.updated_at_ms),
+          sortMsTrusted: false,
+          at: typeof value.at === "number" ? value.at : now,
+        };
+      }
+      return next;
+    } catch {
+      return {};
+    }
+  }
+
+  function readProjectMoveProjection() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(projectMoveProjectionKey) || "{}");
+      const raw = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      const merged = { ...readLegacyProjectMoveProjection(), ...raw };
+      const now = Date.now();
+      const projection = {};
+      for (const [key, value] of Object.entries(merged)) {
+        if (!value || typeof value !== "object") continue;
+        const sessionId = projectMoveSessionKey(value.sessionId || key);
+        if (!sessionId) continue;
+        if (typeof value.at === "number" && now - value.at > projectMoveProjectionTtlMs) continue;
+        const targetKind = value.targetKind === "projectless" ? "projectless" : "project";
+        const targetCwd = String(value.targetCwd || value.path || "");
+        if (targetKind === "project" && !targetCwd) continue;
+        projection[sessionId] = {
+          sessionId,
+          targetKind,
+          targetCwd,
+          targetLabel: String(value.targetLabel || value.label || (targetKind === "projectless" ? "普通对话" : displayProjectName(targetCwd))),
+          title: String(value.title || ""),
+          sortMs: sortMsForSession(sessionId, value.sortMs || value.updatedAtMs || value.updated_at_ms),
+          sortMsTrusted: value.sortMsTrusted === true,
+          at: typeof value.at === "number" ? value.at : now,
+        };
+      }
+      return projection;
+    } catch {
+      return readLegacyProjectMoveProjection();
+    }
+  }
+
+  function writeProjectMoveProjection(projection) {
+    try {
+      localStorage.setItem(projectMoveProjectionKey, JSON.stringify(projection || {}));
+      localStorage.removeItem(legacyProjectMoveOverridesKey);
+    } catch (error) {
+      window.__codexProjectMoveProjectionFailures = window.__codexProjectMoveProjectionFailures || [];
+      window.__codexProjectMoveProjectionFailures.push(String(error?.stack || error));
+    }
+  }
+
+  function saveProjectMoveProjection(ref, target, sortMs) {
+    const id = projectMoveSessionKey(ref.session_id);
+    if (!id || !target) return;
+    const projection = readProjectMoveProjection();
+    projection[id] = {
+      sessionId: id,
+      targetKind: target.kind === "projectless" ? "projectless" : "project",
+      targetCwd: target.path || "",
+      targetLabel: target.label || (target.kind === "projectless" ? "普通对话" : displayProjectName(target.path)),
+      title: ref.title || "",
+      sortMs: sortMsForSession(ref.session_id, sortMs || target.sortMs),
+      sortMsTrusted: target.sortMsTrusted === true,
+      at: Date.now(),
+    };
+    writeProjectMoveProjection(projection);
+  }
+
+  function clearProjectMoveProjection(ref) {
+    const projection = readProjectMoveProjection();
+    const keys = threadIdVariants(ref.session_id).map(projectMoveSessionKey).filter(Boolean);
+    let changed = false;
+    keys.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(projection, key)) {
+        delete projection[key];
+        changed = true;
+      }
+    });
+    if (changed) writeProjectMoveProjection(projection);
+  }
+
+  function projectionForSessionId(sessionId, projection = readProjectMoveProjection()) {
+    const key = projectMoveSessionKey(sessionId);
+    return key ? projection[key] || null : null;
+  }
+
+  function projectRowFromListItem(projectItem) {
+    if (!projectItem) return null;
+    if (projectItem.matches?.("[data-app-action-sidebar-project-row]")) return projectItem;
+    return projectItem.querySelector?.("[data-app-action-sidebar-project-row]") || null;
+  }
+
+  function targetPath(target) {
+    return target?.path || target?.targetCwd || "";
+  }
+
+  function targetLabel(target) {
+    return target?.label || target?.targetLabel || displayProjectName(targetPath(target));
+  }
+
+  function projectItemMatchesTarget(projectItem, target) {
+    const projectRow = projectRowFromListItem(projectItem);
+    const projectPath = projectRow?.getAttribute?.("data-app-action-sidebar-project-id") || "";
+    if (projectPath && sameWorkspacePath(projectPath, targetPath(target))) return true;
+    const actual = normalizeProjectLabel(projectRow?.getAttribute?.("data-app-action-sidebar-project-label") || projectItem?.getAttribute?.("aria-label"));
+    const labels = uniqueValues([targetLabel(target), displayProjectName(targetPath(target))]).map(normalizeProjectLabel).filter(Boolean);
+    return !!actual && labels.includes(actual);
+  }
+
+  function findProjectListItem(target) {
+    const nativeTarget = nativeProjectTargets().find((project) => sameWorkspacePath(project.path, targetPath(target)));
+    if (nativeTarget?.listItem) return nativeTarget.listItem;
+    const section = projectsSection();
+    if (!section) return null;
+    return Array.from(section.querySelectorAll('[role="listitem"][aria-label]')).find((item) => projectItemMatchesTarget(item, target)) || null;
+  }
+
+  function closestProjectListItem(row) {
+    const item = row.closest?.('[role="listitem"][aria-label]');
+    return item?.closest?.('[data-app-action-sidebar-section-heading="Projects"]') ? item : null;
+  }
+
+  function rowIsInChats(row) {
+    return !!row.closest?.('[data-app-action-sidebar-section-heading="Chats"]');
+  }
+
+  function chatsThreadList() {
+    return chatsSection()?.querySelector?.('[role="list"][aria-label="对话"], [role="list"]') || null;
+  }
+
+  function rowIsUnderTargetProject(row, target) {
+    const item = closestProjectListItem(row);
+    return !!item && projectItemMatchesTarget(item, target);
+  }
+
+  function rowIsUnderTarget(row, target) {
+    return target?.targetKind === "projectless" || target?.kind === "projectless" ? rowIsInChats(row) : rowIsUnderTargetProject(row, target);
+  }
+
+  function rowListItem(row) {
+    return row.closest?.('[role="listitem"]') || row;
+  }
+
+  function rowContentRoot(row) {
+    return Array.from(row?.children || []).find((child) => String(child.className || "").includes("h-full w-full items-center")) || null;
+  }
+
+  function normalizedText(node) {
+    return String(node?.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
+  function classNameText(node) {
+    return String(node?.className || "");
+  }
+
+  function isRelativeTimeText(text) {
+    const value = String(text || "").replace(/\s+/g, " ").trim();
+    return /^(刚刚|just now|\d+\s*(秒|秒钟|分|分钟|小时|天|日|周|星期|个月|月|年|sec|secs|second|seconds|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|mos|month|months|y|yr|yrs|year|years))$/i.test(value);
+  }
+
+  function nodeIsThreadTitle(row, node) {
+    return Array.from(row?.querySelectorAll?.('[data-thread-title], .truncate.select-none, .truncate.text-base') || [])
+      .some((titleNode) => titleNode === node || titleNode.contains(node));
+  }
+
+  function closestTimeWrapper(row, node) {
+    const root = rowContentRoot(row) || row;
+    let current = node?.parentElement || null;
+    while (current && current !== root && current !== row) {
+      const className = classNameText(current);
+      if (current.dataset?.codexProjectMoveTimeWrapper === "true" || (className.includes("ml-[3px]") && className.includes("min-w-[26px]"))) return current;
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  function nodeInsideStatusIcon(row, node) {
+    const stop = closestTimeWrapper(row, node) || rowContentRoot(row) || row;
+    let current = node || null;
+    while (current && current !== stop && current !== row) {
+      const className = classNameText(current);
+      if (className.includes("animate-spin")) return true;
+      if (className.includes("size-5") && className.includes("shrink-0")) return true;
+      if (className.includes("contain-paint") && className.includes("contain-layout")) return true;
+      current = current.parentElement;
+    }
+    return false;
+  }
+
+  function cleanupManagedStatusIconTimeNodes(row) {
+    Array.from(row?.querySelectorAll?.('[data-codex-project-move-time="true"]') || []).forEach((node) => {
+      if (!nodeInsideStatusIcon(row, node)) return;
+      const text = normalizedText(node);
+      delete node.dataset.codexProjectMoveTime;
+      delete node.dataset.codexProjectMoveTimeMs;
+      if (node.children.length === 0 && isRelativeTimeText(text)) node.textContent = "";
+    });
+  }
+
+  function nodeLooksLikeTimeLabel(row, node) {
+    if (nodeInsideStatusIcon(row, node)) return false;
+    if (node?.dataset?.codexProjectMoveTime === "true") return true;
+    if (node.children.length > 0) return false;
+    const text = normalizedText(node);
+    const className = classNameText(node);
+    if ((className.includes("tabular-nums") || className.includes("text-token-description-foreground")) && text.length <= 24) return true;
+    if (!isRelativeTimeText(text)) return false;
+    const rowRect = row?.getBoundingClientRect?.();
+    const nodeRect = node?.getBoundingClientRect?.();
+    if (!rowRect || !nodeRect || rowRect.width <= 0 || nodeRect.width <= 0) return false;
+    return nodeRect.left >= rowRect.left + rowRect.width * 0.45 || nodeRect.right >= rowRect.right - 96;
+  }
+
+  function rowTimeLabelCandidates(row) {
+    cleanupManagedStatusIconTimeNodes(row);
+    const root = rowContentRoot(row) || row;
+    const raw = Array.from(root?.querySelectorAll?.("div, span, time, small") || []).filter((node) => {
+      if (nodeIsThreadTitle(row, node)) return false;
+      return nodeLooksLikeTimeLabel(row, node);
+    });
+    return raw.filter((node) => !raw.some((other) => other !== node && node.contains(other)));
+  }
+
+  function rowTimeLabelNode(row) {
+    const candidates = rowTimeLabelCandidates(row);
+    return candidates.find((node) => node.dataset?.codexProjectMoveTime !== "true" && !node.closest?.('[data-codex-project-move-time-wrapper="true"]')) || candidates[0] || null;
+  }
+
+  function removeTimeLabelNode(row, node) {
+    if (!node || !row?.contains?.(node)) return;
+    const wrapper = node.closest?.('[data-codex-project-move-time-wrapper="true"]') || closestTimeWrapper(row, node);
+    if (wrapper && wrapper !== row && row.contains(wrapper)) {
+      wrapper.remove();
+      return;
+    }
+    node.remove();
+  }
+
+  function cleanupRowTimeLabels(row, keepNode) {
+    if (!keepNode) return;
+    rowTimeLabelCandidates(row).forEach((node) => {
+      if (node === keepNode) return;
+      if (node.dataset?.codexProjectMoveTime === "true" || node.closest?.('[data-codex-project-move-time-wrapper="true"]')) removeTimeLabelNode(row, node);
+    });
+  }
+
+  function ensureRowTimeLabelNode(row) {
+    const existing = rowTimeLabelNode(row);
+    if (existing) {
+      cleanupRowTimeLabels(row, existing);
+      return existing;
+    }
+    const root = rowContentRoot(row);
+    if (!root) return null;
+    const wrapper = document.createElement("div");
+    wrapper.className = "ml-[3px] flex items-center justify-end gap-1 min-w-[26px]";
+    wrapper.dataset.codexProjectMoveTimeWrapper = "true";
+    const inner = document.createElement("div");
+    const label = document.createElement("div");
+    label.className = "text-token-description-foreground text-sm leading-4 empty:hidden tabular-nums overflow-visible truncate text-right group-focus-within:opacity-0 group-hover:opacity-0";
+    label.dataset.codexProjectMoveTime = "true";
+    inner.appendChild(label);
+    wrapper.appendChild(inner);
+    root.appendChild(wrapper);
+    return label;
+  }
+
+  function updateRowTimeLabel(row, sortMs) {
+    const label = ensureRowTimeLabelNode(row);
+    if (!label) return;
+    const timestamp = numericTimestamp(sortMs);
+    const text = relativeTimeLabel(timestamp);
+    label.dataset.codexProjectMoveTime = "true";
+    label.dataset.codexProjectMoveTimeMs = String(timestamp || 0);
+    if (text && label.textContent !== text) label.textContent = text;
+    cleanupRowTimeLabels(row, label);
+  }
+
+  function rowProjectionKind(row) {
+    return row?.dataset?.codexProjectMoveTargetKind || rowListItem(row)?.dataset?.codexProjectMoveTargetKind || "";
+  }
+
+  function rowSortMs(row, ref = sessionRefFromRow(row), target = null) {
+    return sortMsForSession(ref.session_id, target?.sortMs || row?.dataset?.codexProjectMoveSortMs || rowListItem(row)?.dataset?.codexProjectMoveSortMs);
+  }
+
+  function threadRowFromListItem(item) {
+    if (!item) return null;
+    if (item.matches?.("[data-app-action-sidebar-thread-id]")) return item;
+    return item.querySelector?.("[data-app-action-sidebar-thread-id]") || null;
+  }
+
+  function rowPinned(row) {
+    return row?.getAttribute?.("data-app-action-sidebar-thread-pinned") === "true" || rowListItem(row)?.getAttribute?.("data-app-action-sidebar-thread-pinned") === "true";
+  }
+
+  function insertRowItemByTime(list, item, row, target) {
+    const ref = sessionRefFromRow(row);
+    const sortMs = rowSortMs(row, ref, target);
+    item.dataset.codexProjectMoveSortMs = String(sortMs || 0);
+    row.dataset.codexProjectMoveSortMs = String(sortMs || 0);
+    if (target?.sortMsTrusted) updateRowTimeLabel(row, sortMs);
+    const pinned = rowPinned(row);
+    const sessionKey = projectMoveSessionKey(ref.session_id);
+    const existingItems = Array.from(list.children).filter((child) => child !== item);
+    let firstNonThreadItem = null;
+    for (const child of existingItems) {
+      const childRow = threadRowFromListItem(child);
+      if (!childRow) {
+        firstNonThreadItem = firstNonThreadItem || child;
+        continue;
+      }
+      const childPinned = rowPinned(childRow);
+      if (childPinned && !pinned) continue;
+      if (!childPinned && pinned) {
+        list.insertBefore(item, child);
+        return;
+      }
+      const childRef = sessionRefFromRow(childRow);
+      const childSortMs = rowSortMs(childRow, childRef);
+      const childKey = projectMoveSessionKey(childRef.session_id);
+      if (sortMs > childSortMs || (sortMs === childSortMs && sessionKey > childKey)) {
+        list.insertBefore(item, child);
+        return;
+      }
+    }
+    if (firstNonThreadItem) {
+      list.insertBefore(item, firstNonThreadItem);
+      return;
+    }
+    list.appendChild(item);
+  }
+
+  function projectMoveInjectedList(projectItem) {
+    let list = projectItem.querySelector('[data-codex-project-move-injected-list="true"]');
+    if (!list) {
+      const body = Array.from(projectItem.children).find((child) => child.classList?.contains("overflow-hidden")) || projectItem;
+      list = document.createElement("div");
+      list.setAttribute("role", "list");
+      list.setAttribute("data-codex-project-move-injected-list", "true");
+      list.className = "flex flex-col";
+      body.appendChild(list);
+    }
+    return list;
+  }
+
+  function projectThreadList(projectItem, target) {
+    const targetCwd = targetPath(target);
+    const projectLists = Array.from(projectItem.querySelectorAll("[data-app-action-sidebar-project-list-id]"));
+    return projectLists.find((list) => sameWorkspacePath(list.getAttribute("data-app-action-sidebar-project-list-id"), targetCwd))
+      || projectLists[0]
+      || projectMoveInjectedList(projectItem);
+  }
+
+  function projectEmptyStateNodes(projectItem) {
+    const emptyLabels = new Set(["暂无对话", "No conversations"]);
+    return Array.from(projectItem.querySelectorAll("div, span")).filter((node) => {
+      if (node.classList?.contains("overflow-hidden")) return false;
+      if (node.closest('[data-app-action-sidebar-thread-id], [data-codex-project-move-injected-list="true"]')) return false;
+      return emptyLabels.has(normalizeProjectLabel(node.textContent));
+    });
+  }
+
+  function setProjectEmptyStateHidden(projectItem, hidden) {
+    projectEmptyStateNodes(projectItem).forEach((node) => {
+      if (hidden) {
+        node.dataset.codexProjectMoveEmptyHidden = "true";
+        node.classList.add("codex-project-move-hidden");
+      } else if (node.dataset.codexProjectMoveEmptyHidden === "true") {
+        delete node.dataset.codexProjectMoveEmptyHidden;
+        node.classList.remove("codex-project-move-hidden");
+      }
+    });
+  }
+
+  function updateProjectMoveEmptyStates() {
+    document.querySelectorAll('[data-codex-project-move-injected-list="true"]').forEach((list) => {
+      const projectItem = list.closest('[role="listitem"][aria-label]');
+      const hasRows = Array.from(list.children).some((child) => child.querySelector?.("[data-app-action-sidebar-thread-id]") || child.matches?.("[data-app-action-sidebar-thread-id]"));
+      if (!hasRows) list.remove();
+      if (projectItem) setProjectEmptyStateHidden(projectItem, hasRows);
+    });
+    document.querySelectorAll('[data-codex-project-move-empty-hidden="true"]').forEach((node) => {
+      const projectItem = node.closest('[role="listitem"][aria-label]');
+      const list = projectItem?.querySelector?.('[data-codex-project-move-injected-list="true"]');
+      if (!list || list.children.length === 0) {
+        delete node.dataset.codexProjectMoveEmptyHidden;
+        node.classList.remove("codex-project-move-hidden");
+      }
+    });
+  }
+
+  function moveRowToProjectList(row, target) {
+    const projectItem = findProjectListItem(target);
+    if (!projectItem) return false;
+    const list = projectThreadList(projectItem, target);
+    const item = rowListItem(row);
+    if (!list) return false;
+    insertRowItemByTime(list, item, row, target);
+    cachedSessionRowsAt = 0;
+    item.dataset.codexProjectMoveTargetKind = "project";
+    item.dataset.codexProjectMoveTargetCwd = targetPath(target);
+    row.dataset.codexProjectMoveTargetKind = "project";
+    row.dataset.codexProjectMoveTargetCwd = targetPath(target);
+    setProjectEmptyStateHidden(projectItem, true);
+    return true;
+  }
+
+  function moveRowToChats(row, target = null) {
+    const list = chatsThreadList();
+    if (!list) return false;
+    const item = rowListItem(row);
+    insertRowItemByTime(list, item, row, target);
+    cachedSessionRowsAt = 0;
+    item.dataset.codexProjectMoveTargetKind = "projectless";
+    row.dataset.codexProjectMoveTargetKind = "projectless";
+    delete item.dataset.codexProjectMoveTargetCwd;
+    delete row.dataset.codexProjectMoveTargetCwd;
+    updateProjectMoveEmptyStates();
+    return true;
+  }
+
+  function applyProjectMoveProjection() {
+    if (!codexPlusSettings().projectMove) return;
+    const projection = readProjectMoveProjection();
+    const targetRowsById = new Map();
+    const settledRefs = [];
+    const now = Date.now();
+    const rows = sessionRows(true);
+    rows.forEach((row) => {
+      const ref = sessionRefFromRow(row);
+      const target = projectionForSessionId(ref.session_id, projection);
+      if (target && rowIsUnderTarget(row, target)) {
+        const rowId = projectMoveSessionKey(ref.session_id);
+        const hadProjectionKind = !!rowProjectionKind(row);
+        const existingRow = targetRowsById.get(rowId);
+        if (existingRow && existingRow !== row) {
+          const existingIsProjection = !!rowProjectionKind(existingRow);
+          const currentIsProjection = !!rowProjectionKind(row);
+          const rowToRemove = existingIsProjection && !currentIsProjection ? existingRow : row;
+          rowListItem(rowToRemove).remove();
+          if (rowToRemove === existingRow) targetRowsById.set(rowId, row);
+          if (rowToRemove === row) return;
+        } else {
+          targetRowsById.set(rowId, row);
+        }
+        if (!hadProjectionKind && typeof target.at === "number" && now - target.at > projectMoveProjectionSettleMs) settledRefs.push(ref);
+        const moved = target.targetKind === "projectless" ? moveRowToChats(row, target) : moveRowToProjectList(row, target);
+        if (moved) targetRowsById.set(rowId, row);
+        const projectItem = closestProjectListItem(row);
+        if (projectItem) setProjectEmptyStateHidden(projectItem, true);
+      }
+    });
+    rows.forEach((row) => {
+      const ref = sessionRefFromRow(row);
+      const rowId = projectMoveSessionKey(ref.session_id);
+      const target = projectionForSessionId(ref.session_id, projection);
+      if (!target) {
+        const item = rowListItem(row);
+        delete row.dataset.codexProjectMoveTargetKind;
+        delete row.dataset.codexProjectMoveTargetCwd;
+        delete item.dataset.codexProjectMoveTargetKind;
+        delete item.dataset.codexProjectMoveTargetCwd;
+        return;
+      }
+      if (rowIsUnderTarget(row, target)) return;
+      if (targetRowsById.has(rowId)) {
+        rowListItem(row).remove();
+        return;
+      }
+      const moved = target.targetKind === "projectless" ? moveRowToChats(row, target) : moveRowToProjectList(row, target);
+      if (moved) targetRowsById.set(rowId, row);
+    });
+    settledRefs.forEach(clearProjectMoveProjection);
+    updateProjectMoveEmptyStates();
+  }
+
+  function scheduleProjectMoveProjection() {
+    if (!codexPlusSettings().projectMove || window.__codexProjectMoveProjectionTimer) return;
+    window.__codexProjectMoveProjectionTimer = setTimeout(() => {
+      if (window.__codexProjectMoveRuntimeId !== codexProjectMoveRuntimeId) return;
+      window.__codexProjectMoveProjectionTimer = null;
+      applyProjectMoveProjection();
+    }, 80);
+  }
+
+  async function refreshRecentConversationsForHost() {
+    try {
+      const signals = await import("./assets/app-server-manager-signals-C1h8B-R-.js");
+      if (typeof signals.rn === "function") await signals.rn("refresh-recent-conversations-for-host", { hostId: "local", sortKey: "updated_at" });
+    } catch (error) {
+      window.__codexProjectMoveRefreshFailures = window.__codexProjectMoveRefreshFailures || [];
+      window.__codexProjectMoveRefreshFailures.push(String(error?.stack || error));
+    }
+  }
+
+  function refreshAfterProjectMove() {
+    const refreshVisibleSidebar = () => {
+      applyProjectMoveProjection();
+      scheduleChatsSortCorrection(0);
+    };
+    refreshVisibleSidebar();
+    refreshRecentConversationsForHost().finally(() => {
+      projectMoveRefreshDelaysMs.forEach((delay) => setTimeout(refreshVisibleSidebar, delay));
+    });
+  }
+
+  function visibleChatsRows() {
+    const list = chatsThreadList();
+    if (!list) return [];
+    return Array.from(list.children).map(threadRowFromListItem).filter(Boolean).filter((row) => rowIsInChats(row));
+  }
+
+  function chatsSortNeedsCorrection(rows) {
+    let previousPinned = true;
+    let previousSortMs = Infinity;
+    let previousKey = "\uffff";
+    for (const row of rows) {
+      const pinned = rowPinned(row);
+      const ref = sessionRefFromRow(row);
+      const sortMs = rowSortMs(row, ref);
+      const key = projectMoveSessionKey(ref.session_id);
+      if (previousPinned && !pinned) {
+        previousPinned = false;
+        previousSortMs = sortMs;
+        previousKey = key;
+        continue;
+      }
+      if (!previousPinned && pinned) return true;
+      if (sortMs > previousSortMs || (sortMs === previousSortMs && key > previousKey)) return true;
+      previousSortMs = sortMs;
+      previousKey = key;
+    }
+    return false;
+  }
+
+  function reorderChatsRows(rows) {
+    const list = chatsThreadList();
+    if (!list || rows.length < 2) return;
+    const rowItems = new Set(rows.map(rowListItem));
+    const firstNonThreadItem = Array.from(list.children).find((child) => !rowItems.has(child) && !threadRowFromListItem(child));
+    const orderedRows = [...rows].sort((left, right) => {
+      const leftPinned = rowPinned(left);
+      const rightPinned = rowPinned(right);
+      if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+      const leftRef = sessionRefFromRow(left);
+      const rightRef = sessionRefFromRow(right);
+      const leftSortMs = rowSortMs(left, leftRef);
+      const rightSortMs = rowSortMs(right, rightRef);
+      if (leftSortMs !== rightSortMs) return rightSortMs - leftSortMs;
+      return projectMoveSessionKey(rightRef.session_id).localeCompare(projectMoveSessionKey(leftRef.session_id));
+    });
+    orderedRows.forEach((row) => list.insertBefore(rowListItem(row), firstNonThreadItem || null));
+    cachedSessionRowsAt = 0;
+  }
+
+  async function applyChatsSortCorrection() {
+    if (!codexPlusSettings().projectMove || chatsSortInFlight) return;
+    const rows = visibleChatsRows();
+    if (rows.length < 2) return;
+    const refs = rows.map(sessionRefFromRow).filter((ref) => ref.session_id);
+    const signature = refs.map((ref) => projectMoveSessionKey(ref.session_id)).join("|");
+    const allRowsHaveSortMs = rows.every((row) => numericTimestamp(row.dataset.codexProjectMoveSortMs || rowListItem(row).dataset.codexProjectMoveSortMs));
+    const shouldRefreshSortKeys = signature !== chatsSortSignature || !allRowsHaveSortMs || Date.now() - chatsSortLastFetchAt > chatsSortDbRefreshIntervalMs;
+    if (!shouldRefreshSortKeys && !chatsSortNeedsCorrection(rows)) return;
+    chatsSortInFlight = true;
+    try {
+      if (shouldRefreshSortKeys) {
+        const result = await postJson("/thread-sort-keys", { sessions: refs }).catch(() => ({ status: "failed", sort_keys: [] }));
+        chatsSortLastFetchAt = Date.now();
+        const byId = new Map();
+        if (result?.status === "ok" && Array.isArray(result?.sort_keys)) {
+          result.sort_keys.forEach((item) => {
+            const key = projectMoveSessionKey(String(item?.session_id || ""));
+            if (key) byId.set(key, item);
+          });
+        }
+        rows.forEach((row) => {
+          const ref = sessionRefFromRow(row);
+          const payload = byId.get(projectMoveSessionKey(ref.session_id));
+          const trustedSortMs = timestampMsFromPayload(payload);
+          const sortMs = trustedSortMs || sortMsForSession(ref.session_id, row.dataset.codexProjectMoveSortMs || rowListItem(row).dataset.codexProjectMoveSortMs);
+          row.dataset.codexProjectMoveSortMs = String(sortMs || 0);
+          rowListItem(row).dataset.codexProjectMoveSortMs = String(sortMs || 0);
+          if (trustedSortMs) updateRowTimeLabel(row, trustedSortMs);
+        });
+      }
+      if (chatsSortNeedsCorrection(rows)) reorderChatsRows(rows);
+      chatsSortSignature = visibleChatsRows().map((row) => projectMoveSessionKey(sessionRefFromRow(row).session_id)).join("|");
+    } finally {
+      chatsSortInFlight = false;
+    }
+  }
+
+  function scheduleChatsSortCorrection(delay = chatsSortRefreshIntervalMs) {
+    if (!codexPlusSettings().projectMove || window.__codexProjectMoveChatsSortTimer) return;
+    window.__codexProjectMoveChatsSortTimer = setTimeout(() => {
+      if (window.__codexProjectMoveRuntimeId !== codexProjectMoveRuntimeId) return;
+      window.__codexProjectMoveChatsSortTimer = null;
+      applyChatsSortCorrection().catch((error) => {
+        window.__codexProjectMoveSortFailures = window.__codexProjectMoveSortFailures || [];
+        window.__codexProjectMoveSortFailures.push(String(error?.stack || error));
+      }).finally(() => {
+        if (codexPlusSettings().projectMove) scheduleChatsSortCorrection();
+      });
+    }, delay);
+  }
+
+  async function setProjectlessThreadIds(ref, mode) {
+    const variants = threadIdVariants(ref.session_id);
+    if (variants.length === 0) throw new Error("未找到会话 ID");
+    const existingIds = await getCodexGlobalState("projectless-thread-ids").catch(() => []);
+    const ids = Array.isArray(existingIds) ? existingIds : [];
+    const variantSet = new Set(variants);
+    const nextIds = mode === "add" ? uniqueValues([...ids, ...variants]) : ids.filter((id) => !variantSet.has(id));
+    if (nextIds.length !== ids.length || nextIds.some((id, index) => id !== ids[index])) await setCodexGlobalState("projectless-thread-ids", nextIds);
+  }
+
+  async function clearThreadWorkspaceHints(ref) {
+    const variants = threadIdVariants(ref.session_id);
+    if (variants.length === 0) return;
+    const hints = objectGlobalState(await getCodexGlobalState("thread-workspace-root-hints").catch(() => ({})));
+    const hintKeys = variants.filter((id) => Object.prototype.hasOwnProperty.call(hints, id));
+    if (hintKeys.length > 0) {
+      hintKeys.forEach((id) => delete hints[id]);
+      await setCodexGlobalState("thread-workspace-root-hints", hints);
+    }
+  }
+
+  async function moveSessionToProjectless(ref) {
+    if (!ref.session_id) throw new Error("未找到会话 ID");
+    await setProjectlessThreadIds(ref, "add");
+    await clearThreadWorkspaceHints(ref);
+    const sortKey = await postJson("/thread-sort-key", ref).catch(() => ({}));
+    return { status: "moved", session_id: ref.session_id, updated_at: sortKey?.updated_at, updated_at_ms: sortKey?.updated_at_ms, created_at_ms: sortKey?.created_at_ms };
+  }
+
+  function isNativeProjectTarget(target) {
+    return target?.kind === "project" && nativeProjectTargets().some((project) => sameWorkspacePath(project.path, target.path));
+  }
+
+  async function moveSessionToProject(ref, target) {
+    if (!ref.session_id) throw new Error("未找到会话 ID");
+    if (!target?.path) throw new Error("目标项目路径为空");
+    if (!isNativeProjectTarget(target)) throw new Error("目标项目不在 Codex 项目列表中");
+    const result = await postJson("/move-thread-workspace", { ...ref, target_cwd: target.path });
+    if (result.status !== "moved") throw new Error(result.message || "移动项目失败");
+    await setProjectlessThreadIds(ref, "remove");
+    await clearThreadWorkspaceHints(ref);
+    return result;
   }
 
   function showToast(message, undoToken) {
@@ -476,7 +1662,7 @@
       undo.textContent = "撤销";
       undo.addEventListener("click", async () => {
         const result = await postJson("/undo", { undo_token: undoToken });
-        toast.textContent = result.message || "Undo finished";
+        toast.textContent = result.message || "撤销完成";
         setTimeout(() => toast.remove(), 5000);
       });
       toast.appendChild(undo);
@@ -573,7 +1759,7 @@
         const rect = button.getBoundingClientRect();
         const label = button.getAttribute("aria-label") || "";
         const text = (button.textContent || "").trim();
-        if (button.classList.contains(buttonClass) || label === "归档对话" || label === "置顶对话") return false;
+        if (button.classList.contains(buttonClass) || button.classList.contains(exportButtonClass) || label === "归档对话" || label === "置顶对话") return false;
         return text === "确认" || (text.length > 0 && rect.width > 0 && rect.width <= 36 && rect.x > row.getBoundingClientRect().right - 50);
       });
       row.classList.toggle("codex-archive-confirm-visible", hasArchiveConfirm);
@@ -591,11 +1777,118 @@
       const result = await postJson("/delete", ref);
       if (result.status === "server_deleted" || result.status === "local_deleted") {
         removeDeletedRow(row, button, ref);
-        showToast(result.message || "Deleted", result.undo_token);
+        showToast(result.message || "删除成功", result.undo_token);
       } else {
-        showToast(result.message || "Delete failed", null);
+        showToast(result.message || "删除失败", null);
       }
     });
+  }
+
+  async function exportMarkdown(ref) {
+    const result = await postJson("/export-markdown", ref);
+    if (result.status === "exported" && result.filename && typeof result.markdown === "string") {
+      downloadMarkdown(result.filename, result.markdown);
+      showToast(result.message || "导出成功", null);
+      return;
+    }
+    showToast(result.message || "导出失败", null);
+  }
+
+  function sortStateFromMoveResult(result, ref, row) {
+    const trustedSortMs = timestampMsFromPayload(result);
+    return { sortMs: trustedSortMs || rowSortMs(row, ref), sortMsTrusted: !!trustedSortMs };
+  }
+
+  function finishProjectMove(row, button, ref, target, message) {
+    releaseDeleteFocus(row, button);
+    button.disabled = false;
+    button.textContent = "移动";
+    saveProjectMoveProjection(ref, target, target.sortMs || rowSortMs(row, ref, target));
+    if (target.kind === "projectless") moveRowToChats(row, target);
+    refreshAfterProjectMove();
+    showToast(message, null);
+  }
+
+  async function applyProjectMove(row, button, ref, target) {
+    button.disabled = true;
+    button.textContent = "移动中";
+    try {
+      if (target.kind === "projectless") {
+        const result = await moveSessionToProjectless(ref);
+        finishProjectMove(row, button, ref, { ...target, ...sortStateFromMoveResult(result, ref, row) }, `已移动到普通对话：“${ref.title || ref.session_id}”`);
+      } else {
+        const result = await moveSessionToProject(ref, target);
+        finishProjectMove(row, button, ref, { ...target, ...sortStateFromMoveResult(result, ref, row) }, `已移动到“${target.label}”：“${ref.title || ref.session_id}”`);
+      }
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "移动";
+      showToast(`移动失败：${error?.message || error}`, null);
+    }
+  }
+
+  async function openProjectMoveMenuForRow(row, button, ref, event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    releaseDeleteFocus(row, button);
+    document.querySelectorAll(`.${projectMoveOverlayClass}`).forEach((node) => node.remove());
+    const overlay = document.createElement("div");
+    overlay.className = projectMoveOverlayClass;
+    overlay.innerHTML = `
+      <div class="codex-project-move-panel" role="dialog" aria-modal="true" aria-label="移动对话">
+        <div class="codex-project-move-header">
+          <div class="codex-project-move-title">移动“${escapeHtml(ref.title || ref.session_id)}”</div>
+        </div>
+        <div class="codex-project-move-list"><div class="codex-project-move-empty">加载项目中...</div></div>
+      </div>
+    `;
+    const panel = overlay.querySelector(".codex-project-move-panel");
+    const rect = button.getBoundingClientRect();
+    const panelWidth = Math.min(360, Math.max(240, window.innerWidth - 32));
+    panel.style.left = `${Math.max(16, Math.min(window.innerWidth - panelWidth - 16, rect.right - panelWidth))}px`;
+    panel.style.top = `${Math.max(16, Math.min(window.innerHeight - 120, rect.bottom + 6))}px`;
+    const close = () => overlay.remove();
+    overlay.addEventListener("click", (clickEvent) => {
+      if (clickEvent.target === overlay) close();
+    }, true);
+    overlay.addEventListener("keydown", (keyEvent) => {
+      if (keyEvent.key === "Escape") {
+        keyEvent.preventDefault();
+        close();
+      }
+    }, true);
+    document.body.appendChild(overlay);
+    try {
+      const targets = projectMoveTargets();
+      const list = overlay.querySelector(".codex-project-move-list");
+      if (!list) return;
+      list.innerHTML = "";
+      if (targets.length === 0) {
+        list.innerHTML = `<div class="codex-project-move-empty">没有可用目标</div>`;
+        return;
+      }
+      for (const target of targets) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "codex-project-move-item";
+        item.innerHTML = `
+          <div class="codex-project-move-item-title">${escapeHtml(target.label)}</div>
+          <div class="codex-project-move-item-path">${escapeHtml(target.description)}</div>
+        `;
+        item.addEventListener("click", async (selectEvent) => {
+          selectEvent.preventDefault();
+          selectEvent.stopPropagation();
+          close();
+          await applyProjectMove(row, button, ref, target);
+        }, true);
+        list.appendChild(item);
+      }
+      list.querySelector("button")?.focus();
+    } catch (error) {
+      close();
+      showToast(`加载项目失败：${error?.message || error}`, null);
+    }
   }
 
   function installDeleteButtonEventDelegation() {
@@ -614,44 +1907,106 @@
     document.addEventListener("click", handler, true);
   }
 
+  function actionGroupFromRow(row) {
+    return row.querySelector(`.${actionGroupClass}`);
+  }
+
+  function removeActionGroups(row) {
+    row.querySelectorAll(`.${actionGroupClass}`).forEach((group) => group.remove());
+  }
+
+  function stopActionButtonEvent(row, button, event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    releaseDeleteFocus(row, button);
+  }
+
+  function installActionButtonEvents(row, button, onActivate) {
+    ["pointerdown", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
+      button.addEventListener(eventName, (event) => stopActionButtonEvent(row, button, event), true);
+    });
+    button.addEventListener("pointerup", onActivate, true);
+    button.addEventListener("click", onActivate, true);
+  }
+
+  function refreshActionButton(originalButton, row, onActivate) {
+    if (!originalButton.isConnected) return;
+    const replacement = originalButton.cloneNode(true);
+    installActionButtonEvents(row, replacement, onActivate);
+    originalButton.replaceWith(replacement);
+  }
+
   function attachButton(row) {
-    if (!codexPlusSettings().sessionDelete) return;
-    const existingDeleteButtons = Array.from(row.querySelectorAll(`.${buttonClass}`));
-    if (existingDeleteButtons.length === 1 && existingDeleteButtons[0].dataset.codexDeleteVersion === codexDeleteVersion) return;
-    existingDeleteButtons.forEach((button) => button.remove());
+    const settings = codexPlusSettings();
+    if (!settings.sessionDelete && !settings.markdownExport && !settings.projectMove) {
+      removeActionGroups(row);
+      row.dataset.codexDeleteRow = "false";
+      row.dataset.codexProjectMoveRow = "false";
+      return;
+    }
+    const existingGroup = actionGroupFromRow(row);
+    const existingDeleteButton = existingGroup?.querySelector(`.${buttonClass}`);
+    const existingExportButton = existingGroup?.querySelector(`.${exportButtonClass}`);
+    const existingMoveButton = existingGroup?.querySelector(`.${projectMoveButtonClass}`);
+    const hasUnexpectedDelete = !settings.sessionDelete && !!existingDeleteButton;
+    const hasUnexpectedExport = !settings.markdownExport && !!existingExportButton;
+    const hasUnexpectedMove = !settings.projectMove && !!existingMoveButton;
+    const missingDelete = settings.sessionDelete && !existingDeleteButton;
+    const missingExport = settings.markdownExport && !existingExportButton;
+    const missingMove = settings.projectMove && !existingMoveButton;
+    const deleteReady = !settings.sessionDelete || existingDeleteButton?.dataset.codexDeleteVersion === codexDeleteVersion;
+    const exportReady = !settings.markdownExport || existingExportButton?.dataset.codexExportVersion === codexExportVersion;
+    const moveReady = !settings.projectMove || existingMoveButton?.dataset.codexProjectMoveVersion === codexProjectMoveVersion;
+    const groupReady = existingGroup?.dataset.codexActionGroupVersion === codexActionGroupVersion;
+    if (groupReady && deleteReady && exportReady && moveReady && !hasUnexpectedDelete && !hasUnexpectedExport && !hasUnexpectedMove && !missingDelete && !missingExport && !missingMove) return;
+    removeActionGroups(row);
     row.dataset.codexDeleteRow = "false";
+    row.dataset.codexProjectMoveRow = "false";
     const ref = sessionRefFromRow(row);
     if (!ref.session_id) return;
     row.dataset.codexDeleteRow = "true";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = buttonClass;
-    button.dataset.codexDeleteVersion = codexDeleteVersion;
-    button.textContent = "删除";
-    const stopDeleteButtonEvent = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      releaseDeleteFocus(row, button);
-    };
-    ["pointerdown", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
-      button.addEventListener(eventName, stopDeleteButtonEvent, true);
-    });
-    const openDeleteConfirm = (event) => openDeleteConfirmForRow(row, button, ref, event);
-    button.addEventListener("pointerup", openDeleteConfirm, true);
-    button.addEventListener("click", openDeleteConfirm, true);
-    row.appendChild(button);
-    const refreshDeleteButton = (originalButton) => {
-      if (!originalButton.isConnected) return;
-      const replacement = originalButton.cloneNode(true);
-      ["pointerdown", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
-        replacement.addEventListener(eventName, stopDeleteButtonEvent, true);
-      });
-      replacement.addEventListener("pointerup", openDeleteConfirm, true);
-      replacement.addEventListener("click", openDeleteConfirm, true);
-      originalButton.replaceWith(replacement);
-    };
-    setTimeout(() => refreshDeleteButton(button), 0);
+    row.dataset.codexProjectMoveRow = String(!!settings.projectMove);
+    const group = document.createElement("div");
+    group.className = actionGroupClass;
+    group.dataset.codexActionGroupVersion = codexActionGroupVersion;
+    if (settings.projectMove) {
+      const moveButton = document.createElement("button");
+      moveButton.type = "button";
+      moveButton.className = `${actionButtonClass} ${projectMoveButtonClass}`;
+      moveButton.dataset.codexProjectMoveVersion = codexProjectMoveVersion;
+      moveButton.textContent = "移动";
+      const openProjectMove = (event) => openProjectMoveMenuForRow(row, moveButton, ref, event);
+      installActionButtonEvents(row, moveButton, openProjectMove);
+      group.appendChild(moveButton);
+      setTimeout(() => refreshActionButton(moveButton, row, openProjectMove), 0);
+    }
+    if (settings.markdownExport) {
+      const exportButton = document.createElement("button");
+      exportButton.type = "button";
+      exportButton.className = `${actionButtonClass} ${exportButtonClass}`;
+      exportButton.dataset.codexExportVersion = codexExportVersion;
+      exportButton.textContent = "导出";
+      const openExport = (event) => {
+        stopActionButtonEvent(row, exportButton, event);
+        exportMarkdown(ref);
+      };
+      installActionButtonEvents(row, exportButton, openExport);
+      group.appendChild(exportButton);
+      setTimeout(() => refreshActionButton(exportButton, row, openExport), 0);
+    }
+    if (settings.sessionDelete) {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = `${actionButtonClass} ${buttonClass}`;
+      deleteButton.dataset.codexDeleteVersion = codexDeleteVersion;
+      deleteButton.textContent = "删除";
+      const openDeleteConfirm = (event) => openDeleteConfirmForRow(row, deleteButton, ref, event);
+      installActionButtonEvents(row, deleteButton, openDeleteConfirm);
+      group.appendChild(deleteButton);
+      setTimeout(() => refreshActionButton(deleteButton, row, openDeleteConfirm), 0);
+    }
+    row.appendChild(group);
   }
 
   function tryAttachButton(row) {
@@ -663,12 +2018,42 @@
     }
   }
 
+  function reactArchivedThreadFromNode(node) {
+    const reactKey = Object.keys(node).find((key) => key.startsWith("__reactFiber$") || key.startsWith("__reactInternalInstance$"));
+    let fiber = reactKey ? node[reactKey] : null;
+    for (let depth = 0; fiber && depth < 20; depth += 1, fiber = fiber.return) {
+      const props = fiber.memoizedProps || fiber.pendingProps || {};
+      if (props.archivedThread?.id) return props.archivedThread;
+      const childThread = props.children?.props?.archivedThread;
+      if (childThread?.id) return childThread;
+    }
+    return null;
+  }
+
+  function archivedThreadFromRow(row) {
+    for (const node of [row, ...row.querySelectorAll("*")]) {
+      const thread = reactArchivedThreadFromNode(node);
+      if (thread?.id || thread?.sessionId) return thread;
+    }
+    return null;
+  }
+
   function archivedRefFromRow(row) {
+    const archivedThread = archivedThreadFromRow(row);
+    if (archivedThread?.id || archivedThread?.sessionId) {
+      return { session_id: archivedThread.id || archivedThread.sessionId, title: archivedThread.title || row.querySelector(".truncate.text-base")?.textContent?.trim() || "Untitled session" };
+    }
     const sidebarRef = sessionRefFromRow(row);
     if (sidebarRef.session_id) return sidebarRef;
-    const title = (row.querySelector(".truncate.text-base")?.textContent || row.textContent || "Untitled session").replace("取消归档", "").replace("删除", "").trim().slice(0, 160);
-    const titleMatches = sessionRows().map(sessionRefFromRow).filter((ref) => ref.session_id && ref.title && title.includes(ref.title.slice(0, 24)));
-    return titleMatches[0] || { session_id: "", title };
+    const titleNode = row.querySelector(".truncate.text-base, [data-thread-title], a, div");
+    const title = ((titleNode || row).textContent || "Untitled session")
+      .replace("取消归档", "")
+      .replace("删除", "")
+      .replace(/\d{4}年\d{1,2}月\d{1,2}日.*$/, "")
+      .replace(/\s+·\s+.*$/, "")
+      .trim()
+      .slice(0, 160);
+    return { session_id: "", title };
   }
 
   async function resolveArchivedThread(row) {
@@ -684,9 +2069,16 @@
     event.stopImmediatePropagation?.();
   }
 
+  function isArchiveTitleText(value) {
+    return value === "已归档对话" || value === "Archived conversations";
+  }
+
   function archiveTitleContainer() {
+    const heading = Array.from(document.querySelectorAll("h1, h2, h3"))
+      .find((element) => isArchiveTitleText((element.textContent || "").trim()));
+    if (heading) return heading;
     return Array.from(document.querySelectorAll("h1, h2, h3, div, span"))
-      .find((element) => (element.textContent || "").trim() === "已归档对话" && element.getBoundingClientRect().x > 350);
+      .find((element) => isArchiveTitleText((element.textContent || "").trim()) && element.getBoundingClientRect().x > 350);
   }
 
   async function deleteArchivedSessions(rows) {
@@ -704,37 +2096,63 @@
   }
 
   function attachArchivedPageDeleteButton(row) {
-    if (!codexPlusSettings().sessionDelete) return;
-    if (row.dataset.codexArchiveDeleteRow === "true") return;
-    row.dataset.codexArchiveDeleteRow = "true";
+    const settings = codexPlusSettings();
+    row.querySelectorAll("[data-codex-archive-row-action]").forEach((button) => button.remove());
+    row.dataset.codexArchiveDeleteRow = "false";
+    if (!settings.sessionDelete && !settings.markdownExport) return;
     const unarchiveButton = Array.from(row.querySelectorAll("button")).find((button) => (button.textContent || "").trim() === "取消归档");
     if (!unarchiveButton) return;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "codex-archive-delete-all";
-    button.textContent = "删除";
-    ["pointerdown", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
-      button.addEventListener(eventName, stopArchivedButtonEvent, true);
-    });
-    button.addEventListener("click", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-      const ref = await resolveArchivedThread(row);
-      if (!ref.session_id) {
-        showToast("Delete failed: archived session id not found", null);
-        return;
-      }
-      if (!(await confirmDelete(ref.title))) return;
-      const result = await postJson("/delete", ref);
-      if (result.status === "server_deleted" || result.status === "local_deleted") {
-        row.remove();
-        showToast(result.message || "Deleted", result.undo_token);
-      } else {
-        showToast(result.message || "Delete failed", null);
-      }
-    }, true);
-    unarchiveButton.insertAdjacentElement("afterend", button);
+    row.dataset.codexArchiveDeleteRow = "true";
+    row.dataset.codexArchiveRowActionsVersion = codexArchiveRowActionsVersion;
+    let insertionPoint = unarchiveButton;
+    if (settings.markdownExport) {
+      const exportButton = document.createElement("button");
+      exportButton.type = "button";
+      exportButton.className = `codex-archive-delete-all codex-archive-row-button ${exportButtonClass}`;
+      exportButton.dataset.codexArchiveRowAction = "export";
+      exportButton.textContent = "导出";
+      ["pointerdown", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
+        exportButton.addEventListener(eventName, stopArchivedButtonEvent, true);
+      });
+      exportButton.addEventListener("click", async (event) => {
+        stopArchivedButtonEvent(event);
+        const ref = await resolveArchivedThread(row);
+        if (!ref.session_id) {
+          showToast("导出失败：未找到归档会话 ID", null);
+          return;
+        }
+        await exportMarkdown(ref);
+      }, true);
+      insertionPoint.insertAdjacentElement("afterend", exportButton);
+      insertionPoint = exportButton;
+    }
+    if (settings.sessionDelete) {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = `codex-archive-delete-all codex-archive-row-button ${buttonClass}`;
+      deleteButton.dataset.codexArchiveRowAction = "delete";
+      deleteButton.textContent = "删除";
+      ["pointerdown", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
+        deleteButton.addEventListener(eventName, stopArchivedButtonEvent, true);
+      });
+      deleteButton.addEventListener("click", async (event) => {
+        stopArchivedButtonEvent(event);
+        const ref = await resolveArchivedThread(row);
+        if (!ref.session_id) {
+          showToast("删除失败：未找到归档会话 ID", null);
+          return;
+        }
+        if (!(await confirmDelete(ref.title))) return;
+        const result = await postJson("/delete", ref);
+        if (result.status === "server_deleted" || result.status === "local_deleted") {
+          row.remove();
+          showToast(result.message || "删除成功", result.undo_token);
+        } else {
+          showToast(result.message || "删除失败", null);
+        }
+      }, true);
+      insertionPoint.insertAdjacentElement("afterend", deleteButton);
+    }
   }
 
   function installArchivedDeleteAllButton() {
@@ -791,6 +2209,7 @@
   function scanLightweight() {
     installStyle();
     installCodexPlusMenu();
+    scheduleBackendHeartbeat();
     installDeleteButtonEventDelegation();
   }
 
@@ -799,6 +2218,8 @@
     unblockPluginInstallButtons();
     sessionRows().forEach(tryAttachButton);
     updateDeleteButtonOffsets();
+    scheduleProjectMoveProjection();
+    scheduleChatsSortCorrection();
     archivedPageRows().forEach(attachArchivedPageDeleteButton);
     installArchivedDeleteAllButton();
   }
@@ -817,16 +2238,43 @@
     requestAnimationFrame(() => runScanStep(scanDeferred));
   }
 
+  function isExtensionUiNode(node) {
+    return !!node?.closest?.(`.codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${projectMoveOverlayClass}, #codex-plus-menu`);
+  }
+
+  const scanRelevantSelector = [
+    selectors.sidebarThread,
+    '[data-app-action-sidebar-section-heading="Chats"]',
+    '[data-app-action-sidebar-section-heading="Projects"]',
+    '[data-codex-project-move-row="true"]',
+    '[data-codex-archive-page-row="true"]',
+    "[data-codex-archive-delete-all]",
+    selectors.appHeader,
+    selectors.archiveNav,
+    selectors.disabledInstallButton,
+  ].join(", ");
+
+  function isScanRelevantNode(node) {
+    if (node.nodeType !== 1) return false;
+    if (isExtensionUiNode(node)) return false;
+    return !!node.matches?.(scanRelevantSelector) || !!node.closest?.(scanRelevantSelector) || !!node.querySelector?.(scanRelevantSelector);
+  }
+
+  function isChatContentMutation(mutation) {
+    const target = mutation.target;
+    if (target?.closest?.('[data-message-author-role], [data-testid="conversation-turn"], main .prose')) {
+      return !Array.from(mutation.addedNodes).some(isScanRelevantNode) && !Array.from(mutation.removedNodes).some(isScanRelevantNode);
+    }
+    return false;
+  }
+
   function shouldScheduleScan(mutations) {
     if (!mutations) return true;
     return mutations.some((mutation) => {
+      if (isChatContentMutation(mutation)) return false;
       const target = mutation.target;
-      if (target?.closest?.(".codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, #codex-plus-menu")) return false;
-      return Array.from(mutation.addedNodes).some((node) => {
-        if (node.nodeType !== 1) return false;
-        if (node.closest?.(".codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, #codex-plus-menu")) return false;
-        return true;
-      }) || Array.from(mutation.removedNodes).some((node) => node.nodeType === 1);
+      if (isExtensionUiNode(target)) return false;
+      return Array.from(mutation.addedNodes).some((node) => node.nodeType === 1 && !isExtensionUiNode(node)) || Array.from(mutation.removedNodes).some((node) => node.nodeType === 1);
     });
   }
 
@@ -845,6 +2293,10 @@
   }
 
   scan();
+  window.__codexProjectMoveApplyProjection = applyProjectMoveProjection;
+  window.__codexProjectMoveReadProjection = readProjectMoveProjection;
+  window.__codexProjectMoveTargets = projectMoveTargets;
+  window.__codexProjectMoveSortChats = applyChatsSortCorrection;
   window.__codexSessionDeleteObserver?.disconnect();
   window.__codexSessionDeleteObserver = new MutationObserver(scheduleScan);
   window.__codexSessionDeleteObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });

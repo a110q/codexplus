@@ -12,6 +12,7 @@ build/
 dist/
 
 .codex_asar_extract/
+.codex_asar_extract_latest/
 .superpowers/
 .claude/
 docs/superpowers/

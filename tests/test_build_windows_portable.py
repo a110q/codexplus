@@ -29,13 +29,19 @@ def test_build_launcher_exe_uses_gui_stub_and_relative_embedded_python(tmp_path)
 def test_copy_application_files_preserves_runtime_package_and_inject_script(tmp_path):
     source = tmp_path / "source"
     package = source / "codex_session_delete"
+    assets = package / "assets"
     inject = package / "inject"
+    user_scripts = package / "user_scripts"
+    assets.mkdir(parents=True)
     inject.mkdir(parents=True)
+    user_scripts.mkdir(parents=True)
     (package / "__init__.py").write_text("__version__ = 'test'\n", encoding="utf-8")
     (package / "cli.py").write_text("def main(argv=None): return 0\n", encoding="utf-8")
     (package / "__pycache__").mkdir()
     (package / "__pycache__" / "cli.pyc").write_bytes(b"cache")
+    (assets / "codex-plus-plus.ico").write_bytes(b"icon")
     (inject / "renderer-inject.js").write_text("console.log('same-ui');\n", encoding="utf-8")
+    (user_scripts / ".gitkeep").write_text("", encoding="utf-8")
     (source / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
 
     target = tmp_path / "portable"
@@ -43,7 +49,9 @@ def test_copy_application_files_preserves_runtime_package_and_inject_script(tmp_
 
     app = target / "app"
     assert (app / "codex_session_delete" / "cli.py").is_file()
+    assert (app / "codex_session_delete" / "assets" / "codex-plus-plus.ico").read_bytes() == b"icon"
     assert (app / "codex_session_delete" / "inject" / "renderer-inject.js").read_text(encoding="utf-8") == "console.log('same-ui');\n"
+    assert (app / "codex_session_delete" / "user_scripts" / ".gitkeep").is_file()
     assert not (app / "codex_session_delete" / "__pycache__").exists()
 
 

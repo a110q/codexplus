@@ -5,7 +5,11 @@ a = Analysis(
     ['codex_session_delete/__main__.py'],
     pathex=[],
     binaries=[],
-    datas=[('codex_session_delete/inject/renderer-inject.js', 'codex_session_delete/inject')],
+    datas=[
+        ('codex_session_delete/assets', 'codex_session_delete/assets'),
+        ('codex_session_delete/inject/renderer-inject.js', 'codex_session_delete/inject'),
+        ('codex_session_delete/user_scripts', 'codex_session_delete/user_scripts'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -32,7 +36,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['/Applications/Codex.app/Contents/Resources/electron.icns'],
+    icon=['codex_session_delete/assets/codex-plus-plus.icns'],
 )
 coll = COLLECT(
     exe,
@@ -46,13 +50,13 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='Codex++.app',
-    icon='/Applications/Codex.app/Contents/Resources/electron.icns',
+    icon='codex_session_delete/assets/codex-plus-plus.icns',
     bundle_identifier='com.bigpizzav3.codexplusplus',
-    version='1.0.1',
+    version='1.0.5.1',
     info_plist={
         'CFBundleDisplayName': 'Codex++',
-        'CFBundleShortVersionString': '1.0.1',
-        'CFBundleVersion': '1.0.1',
+        'CFBundleShortVersionString': '1.0.5.1',
+        'CFBundleVersion': '1.0.5.1',
         'LSMinimumSystemVersion': '12.0',
     },
 )
