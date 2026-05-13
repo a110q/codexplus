@@ -21,20 +21,20 @@ def test_is_newer_version_compares_numeric_segments():
 def test_release_from_github_payload_selects_wheel_asset():
     release = updater.Release.from_github_payload(
         {
-            "tag_name": "v1.0.5.1",
-            "html_url": "https://github.com/a110q/codexplus/releases/tag/v1.0.5.1",
+            "tag_name": "v1.0.6.1",
+            "html_url": "https://github.com/a110q/codexplus/releases/tag/v1.0.6.1",
             "body": "fixes",
             "prerelease": False,
             "draft": False,
             "assets": [
                 {"name": "CodexPlusPlus.zip", "browser_download_url": "https://example.test/source.zip"},
-                {"name": "codex_session_delete-1.0.5.1-py3-none-any.whl", "browser_download_url": "https://example.test/pkg.whl"},
+                {"name": "codex_session_delete-1.0.6.1-py3-none-any.whl", "browser_download_url": "https://example.test/pkg.whl"},
             ],
         }
     )
 
-    assert release.version == "v1.0.5.1"
-    assert release.asset_name == "codex_session_delete-1.0.5.1-py3-none-any.whl"
+    assert release.version == "v1.0.6.1"
+    assert release.asset_name == "codex_session_delete-1.0.6.1-py3-none-any.whl"
     assert release.asset_url == "https://example.test/pkg.whl"
 
 
@@ -47,8 +47,8 @@ def test_fetch_latest_release_uses_github_api(monkeypatch):
 
         def json(self):
             return {
-                "tag_name": "v1.0.5.1",
-                "html_url": "https://github.com/a110q/codexplus/releases/tag/v1.0.5.1",
+                "tag_name": "v1.0.6.1",
+                "html_url": "https://github.com/a110q/codexplus/releases/tag/v1.0.6.1",
                 "assets": [],
             }
 
@@ -56,7 +56,7 @@ def test_fetch_latest_release_uses_github_api(monkeypatch):
 
     release = updater.fetch_latest_release()
 
-    assert release.version == "v1.0.5.1"
+    assert release.version == "v1.0.6.1"
     assert requested[0][0] == updater.DEFAULT_RELEASE_API_URL
     assert requested[0][1]["timeout"] == 10
     assert "Codex++" in requested[0][1]["headers"]["User-Agent"]
@@ -84,8 +84,8 @@ def test_download_asset_writes_release_file(monkeypatch, tmp_path):
 def test_perform_update_installs_downloaded_wheel_and_reruns_setup(monkeypatch, tmp_path):
     commands = []
     release = updater.Release(
-        version="v1.0.5.1",
-        url="https://github.com/a110q/codexplus/releases/tag/v1.0.5.1",
+        version="v1.0.6.1",
+        url="https://github.com/a110q/codexplus/releases/tag/v1.0.6.1",
         body="fixes",
         asset_name="pkg.whl",
         asset_url="https://example.test/pkg.whl",
@@ -105,7 +105,7 @@ def test_perform_update_installs_downloaded_wheel_and_reruns_setup(monkeypatch, 
 
 
 def test_perform_update_rejects_release_without_asset(tmp_path):
-    release = updater.Release(version="v1.0.5.1", url="https://example.test", body="")
+    release = updater.Release(version="v1.0.6.1", url="https://example.test", body="")
 
     with pytest.raises(updater.UpdateError, match="没有可下载的 Release asset"):
         updater.perform_update(release, python_executable="python.exe", download_dir=tmp_path)

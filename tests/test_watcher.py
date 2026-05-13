@@ -116,5 +116,18 @@ def test_takeover_skips_kill_when_cdp_appears(monkeypatch):
     assert killed == []
 
 
+def test_find_codex_processes_excludes_cli_commands(monkeypatch):
+    output = "\n".join(
+        [
+            "101\tC:\\Program Files\\WindowsApps\\OpenAI.Codex_1.2.3\\Codex.exe\t\"C:\\Program Files\\WindowsApps\\OpenAI.Codex_1.2.3\\Codex.exe\"",
+            "202\tC:\\Users\\User\\AppData\\Roaming\\npm\\codex.exe\t\"C:\\Users\\User\\AppData\\Roaming\\npm\\codex.exe\"",
+            "303\tC:\\Users\\User\\AppData\\Local\\Programs\\codex\\codex.exe\t\"C:\\Users\\User\\AppData\\Local\\Programs\\codex\\codex.exe\" --model opus",
+        ]
+    )
+    monkeypatch.setattr(watcher, "_run_powershell", lambda script: output)
+
+    assert watcher.find_codex_processes() == [101]
+
+
 def test_takeover_failure_backoff_is_not_too_short():
     assert watcher.TAKEOVER_FAILURE_BACKOFF_SECONDS >= 30.0

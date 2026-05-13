@@ -21,6 +21,7 @@ Codex++ 是一个面向 OpenAI Codex App 的外部增强启动器。它不修改
 - [痛点](#痛点)
 - [解决效果](#解决效果)
 - [下载](#下载)
+- [Provider 同步](#provider-同步)
 - [工作方式](#工作方式)
 - [环境要求](#环境要求)
 - [Windows 使用](#windows-使用)
@@ -50,6 +51,8 @@ Codex++ 是一个面向 OpenAI Codex App 的外部增强启动器。它不修改
 - 支持 Markdown 导出
 - 支持用户脚本管理
 - 支持项目移动辅助
+- 支持对话 Timeline
+- 支持 Provider 同步
 - 支持后端状态指示与修复入口
 - 支持 Windows 快捷方式安装/卸载
 - 支持 Windows x64 portable `.exe`
@@ -82,20 +85,33 @@ Codex++ 启动后会解锁插件入口，并在会话列表悬停时显示删除
 
 预打包文件已放在 GitHub Releases：
 
-- macOS Apple Silicon：[Codex++-macOS-arm64.zip](https://github.com/a110q/codexplus/releases/download/v1.0.5.1/Codex%2B%2B-macOS-arm64.zip)
-- Windows x64 portable：[Codex++-Windows-x64-portable.zip](https://github.com/a110q/codexplus/releases/download/v1.0.5.1/Codex%2B%2B-Windows-x64-portable.zip)
+- macOS Apple Silicon：[Codex++-macOS-arm64.zip](https://github.com/a110q/codexplus/releases/download/v1.0.6.1/Codex%2B%2B-macOS-arm64.zip)
+- Windows x64 portable：[Codex++-Windows-x64-portable.zip](https://github.com/a110q/codexplus/releases/download/v1.0.6.1/Codex%2B%2B-Windows-x64-portable.zip)
 
-Release 页面：[https://github.com/a110q/codexplus/releases/tag/v1.0.5.1](https://github.com/a110q/codexplus/releases/tag/v1.0.5.1)
+Release 页面：[https://github.com/a110q/codexplus/releases/tag/v1.0.6.1](https://github.com/a110q/codexplus/releases/tag/v1.0.6.1)
+
+## Provider 同步
+
+启用 `Provider 同步` 后，Codex++ 会在启动 Codex 前同步本地会话 metadata。它会把 rollout 文件、SQLite 线程记录和项目路径缓存同步到当前 `model_provider`，让你切换 `model_provider` 或供应商时不丢历史会话。
+
+适合这些场景：
+
+- 从 OpenAI 切换到第三方 provider 后，旧会话在 Desktop 或 `/resume` 中不可见
+- 切回其他 provider 后，希望历史对话继续出现在原项目下
+- Windows 路径带有 `\\?\` 前缀导致 Desktop 项目列表匹配不到旧会话
+
+同步只修复会话可见性相关 metadata，不改写对话内容；如果 Codex 正在占用某个会话文件或 SQLite 忙碌，Codex++ 会跳过并继续启动，避免阻塞 Codex。
 
 ## 工作方式
 
 Codex++ 使用外部启动方式运行 Codex：
 
 1. 启动 Codex App，并附加 `--remote-debugging-port` 和 `--remote-allow-origins`。
-2. 启动本地 helper 服务，保留健康检查和运行生命周期。
-3. 通过 CDP 注入 `renderer-inject.js`。
-4. 渲染端通过 CDP bridge 调用本地删除、导出、用户脚本等服务；默认不开放 HTTP 删除/撤销入口，避免本机其他页面误触发删除类操作。
-5. 启动 Codex 时会继承现有 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`；如果这些环境变量未设置，会自动探测常见本地代理端口。
+2. 如果启用了 Provider 同步，启动 Codex 前先同步历史会话 metadata。
+3. 启动本地 helper 服务，保留健康检查和运行生命周期。
+4. 通过 CDP 注入 `renderer-inject.js`。
+5. 渲染端通过 CDP bridge 调用本地删除、导出、用户脚本、Provider 同步设置等服务；默认不开放 HTTP 删除/撤销入口，避免本机其他页面误触发删除类操作。
+6. 启动 Codex 时会继承现有 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`；如果这些环境变量未设置，会自动探测常见本地代理端口。
 
 这种方式不会修改 Codex 的 `app.asar`，也不需要往 Codex 安装目录写 DLL。
 

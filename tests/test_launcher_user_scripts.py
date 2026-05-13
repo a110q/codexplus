@@ -1,5 +1,6 @@
 from codex_session_delete.launcher import handle_bridge_request
 from codex_session_delete.models import ExportResult, ExportStatus
+from codex_session_delete.settings_store import SettingsStore
 from codex_session_delete.user_scripts import UserScriptManager
 
 
@@ -81,6 +82,30 @@ def test_handle_bridge_request_reports_and_repairs_backend_status(tmp_path):
     assert repaired == {"status": "ok", "message": "后端已修复"}
 
 
+def test_handle_bridge_request_gets_backend_settings(monkeypatch, tmp_path):
+    store = SettingsStore(tmp_path / "settings.json")
+    store.update({"providerSyncEnabled": True})
+    monkeypatch.setattr("codex_session_delete.launcher.SettingsStore", lambda: store)
+    manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
+    runtime = FakeRuntime(manager)
+
+    result = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/settings/get", {}, runtime)
+
+    assert result == {"providerSyncEnabled": True}
+
+
+def test_handle_bridge_request_sets_backend_settings(monkeypatch, tmp_path):
+    store = SettingsStore(tmp_path / "settings.json")
+    monkeypatch.setattr("codex_session_delete.launcher.SettingsStore", lambda: store)
+    manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
+    runtime = FakeRuntime(manager)
+
+    result = handle_bridge_request(FakeDeleteService(), FakeExportService(), "/settings/set", {"providerSyncEnabled": True}, runtime)
+
+    assert result == {"providerSyncEnabled": True}
+    assert store.load().provider_sync_enabled is True
+
+
 def test_handle_bridge_request_exports_markdown(tmp_path):
     manager = UserScriptManager(tmp_path / "builtin", tmp_path / "user", tmp_path / "config.json")
     runtime = FakeRuntime(manager)
@@ -89,3 +114,4 @@ def test_handle_bridge_request_exports_markdown(tmp_path):
 
     assert exported["status"] == "exported"
     assert exported["filename"] == "thread.md"
+

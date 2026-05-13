@@ -67,10 +67,20 @@ def _run_powershell(script: str, timeout: float = 8.0) -> str:
 def find_codex_processes() -> list[int]:
     script = (
         "Get-CimInstance Win32_Process -Filter \"Name='Codex.exe' OR Name='codex.exe'\" "
-        "| Select-Object -ExpandProperty ProcessId"
+        "| Select-Object ProcessId, ExecutablePath, CommandLine "
+        "| ForEach-Object { \"$($_.ProcessId)`t$($_.ExecutablePath)`t$($_.CommandLine)\" }"
     )
     output = _run_powershell(script)
-    return [int(line) for line in output.splitlines() if line.strip().isdigit()]
+    pids: list[int] = []
+    for line in output.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) < 2 or not parts[0].strip().isdigit():
+            continue
+        executable_path = parts[1].lower()
+        if "\\windowsapps\\openai.codex_" not in executable_path:
+            continue
+        pids.append(int(parts[0]))
+    return pids
 
 
 def kill_processes(pids: list[int]) -> None:

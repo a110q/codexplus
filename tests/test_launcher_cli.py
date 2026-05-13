@@ -325,8 +325,8 @@ def test_cli_setup_alias_installs_with_default_launcher(monkeypatch):
 
 def test_cli_check_update_prints_latest_release(monkeypatch, capsys):
     class Release:
-        version = "v1.0.5.1"
-        url = "https://github.com/a110q/codexplus/releases/tag/v1.0.5.1"
+        version = "v1.0.6.1"
+        url = "https://github.com/a110q/codexplus/releases/tag/v1.0.6.1"
         body = "fixes"
 
     monkeypatch.setattr(cli.updater, "is_source_tree_mode", lambda: False)
@@ -336,8 +336,8 @@ def test_cli_check_update_prints_latest_release(monkeypatch, capsys):
 
     assert exit_code == 0
     output = capsys.readouterr().out
-    assert "发现新版本 v1.0.5.1" in output
-    assert "codexplus/releases/tag/v1.0.5.1" in output
+    assert "发现新版本 v1.0.6.1" in output
+    assert "codexplus/releases/tag/v1.0.6.1" in output
 
 
 def test_cli_check_update_reports_current_version(monkeypatch, capsys):
@@ -364,8 +364,8 @@ def test_cli_check_update_reports_source_tree_migration_mode(monkeypatch, capsys
 
 def test_cli_update_migrates_source_tree_to_release_install(monkeypatch, capsys):
     class Release:
-        version = "v1.0.5.1"
-        url = "https://github.com/a110q/codexplus/releases/tag/v1.0.5.1"
+        version = "v1.0.6.1"
+        url = "https://github.com/a110q/codexplus/releases/tag/v1.0.6.1"
         body = "fixes"
         asset_name = "CodexPlusPlus.zip"
 
@@ -377,7 +377,7 @@ def test_cli_update_migrates_source_tree_to_release_install(monkeypatch, capsys)
     exit_code = cli.main(["update"])
 
     assert exit_code == 0
-    assert calls[0].version == "v1.0.5.1"
+    assert calls[0].version == "v1.0.6.1"
     output = capsys.readouterr().out
     assert "源码目录运行" in output
     assert "迁移到 Release 安装" in output
@@ -386,8 +386,8 @@ def test_cli_update_migrates_source_tree_to_release_install(monkeypatch, capsys)
 
 def test_cli_update_installs_latest_release(monkeypatch, tmp_path, capsys):
     class Release:
-        version = "v1.0.5.1"
-        url = "https://github.com/a110q/codexplus/releases/tag/v1.0.5.1"
+        version = "v1.0.6.1"
+        url = "https://github.com/a110q/codexplus/releases/tag/v1.0.6.1"
         body = "fixes"
 
     calls = []
@@ -398,7 +398,7 @@ def test_cli_update_installs_latest_release(monkeypatch, tmp_path, capsys):
     exit_code = cli.main(["update"])
 
     assert exit_code == 0
-    assert calls[0].version == "v1.0.5.1"
+    assert calls[0].version == "v1.0.6.1"
     assert "更新完成" in capsys.readouterr().out
 
 

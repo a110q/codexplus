@@ -194,7 +194,7 @@ def test_renderer_script_sidebar_delete_opens_on_pointerup_when_click_is_unrelia
 
     text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
     assert "updateDeleteButtonOffsets" in text
-    assert "codexDeleteStyleVersion = \"6\"" in text
+    assert "codexDeleteStyleVersion = \"7\"" in text
     assert "right: 66px" in text
     assert "确认" in text
     assert "归档对话" in text
@@ -347,7 +347,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "setAuthMethod(\"chatgpt\")" in text
     assert "patchFastModeGateOnObject" not in text
     assert "Codex++" in text
-    assert "codexPlusVersion = \"1.0.5.1\"" in text
+    assert "codexPlusVersion = \"1.0.6.1\"" in text
     assert "Codex++ ${codexPlusVersion}" in text
     assert "提出问题" in text
     assert "https://github.com/a110q/codexplus/issues" in text
@@ -366,7 +366,9 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "sessionDelete" in text
     assert "markdownExport" in text
     assert "projectMove" in text
+    assert "conversationTimeline" in text
     assert "会话项目移动" in text
+    assert "对话 Timeline" in text
     assert "移动按钮" in text
     assert "codex-plus-modal-overlay" in text
     assert "codex-plus-modal-content" in text
@@ -377,7 +379,7 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "codex-plus-menu-floating" in text
     assert "findNativeMenuInsertionPoint" in text
     assert "if (!codexPlusSettings().nativeMenuPlacement) return null" in text
-    assert "right: 140px" in text
+    assert "right: var(--codex-plus-menu-right, 140px)" in text
     assert "left: auto" in text
     assert "pointer-events: auto" in text
     assert "-webkit-app-region: no-drag" in text
@@ -389,9 +391,28 @@ def test_renderer_script_includes_user_script_manager_ui_contract():
     assert "removeDuplicateCodexPlusMenus" in text
     assert "data-codex-plus-menu" in text
     assert "textContent || \"\").trim() === `Codex++ ${codexPlusVersion}`" in text
-    assert "codexPlusMenuVersion = \"5\"" in text
+    assert "codexPlusMenuVersion !== \"6\"" in text
     assert "codexPlusTriggerInstalled = \"5\"" in text
     assert ".codex-plus-trigger:hover" not in text
+    assert 'data-codex-plus-tab="sponsor"' not in text
+    assert "docs/images/sponsor-alipay.jpg" not in text
+    assert "docs/images/sponsor-wechat.jpg" not in text
+
+
+def test_renderer_script_has_backend_provider_sync_toggle_and_timeline():
+    text = Path("codex_session_delete/inject/renderer-inject.js").read_text(encoding="utf-8")
+
+    assert "Provider 同步" in text
+    assert "切换供应商（model_provider）时不丢任何历史会话" in text
+    assert "避免历史对话因为供应商切换而消失" in text
+    assert 'data-codex-backend-setting="providerSyncEnabled"' in text
+    assert "/settings/get" in text
+    assert "/settings/set" in text
+    assert "loadBackendSettings" in text
+    assert "setBackendSetting" in text
+    assert 'data-codex-plus-setting="conversationTimeline"' in text
+    assert "codex-conversation-timeline-marker" in text
+    assert "refreshConversationTimeline" in text
 
 
 def test_renderer_script_can_move_sidebar_threads_between_projects():

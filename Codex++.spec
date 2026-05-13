@@ -52,11 +52,11 @@ app = BUNDLE(
     name='Codex++.app',
     icon='codex_session_delete/assets/codex-plus-plus.icns',
     bundle_identifier='com.bigpizzav3.codexplusplus',
-    version='1.0.5.1',
+    version='1.0.6.1',
     info_plist={
         'CFBundleDisplayName': 'Codex++',
-        'CFBundleShortVersionString': '1.0.5.1',
-        'CFBundleVersion': '1.0.5.1',
+        'CFBundleShortVersionString': '1.0.6.1',
+        'CFBundleVersion': '1.0.6.1',
         'LSMinimumSystemVersion': '12.0',
     },
 )

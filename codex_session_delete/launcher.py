@@ -20,6 +20,8 @@ from codex_session_delete.cdp import evaluate_user_scripts, inject_file, open_de
 from codex_session_delete.helper_server import HelperServer
 from codex_session_delete.markdown_exporter import MarkdownExportService
 from codex_session_delete.models import DeleteResult, DeleteStatus, SessionRef
+from codex_session_delete.provider_sync import ProviderSyncStatus, run_provider_sync
+from codex_session_delete.settings_store import BackendSettings, SettingsStore
 from codex_session_delete.storage_adapter import SQLiteStorageAdapter
 from codex_session_delete.user_scripts import UserScriptManager
 
@@ -95,6 +97,10 @@ def user_scripts_config_dir() -> Path:
         base = os.environ.get("APPDATA")
         return Path(base) / "Codex++" if base else Path.home() / "AppData" / "Roaming" / "Codex++"
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "Codex++"
+
+
+def backend_settings() -> BackendSettings:
+    return SettingsStore().load()
 
 
 def _can_bind_loopback_port(port: int) -> bool:
@@ -335,6 +341,10 @@ def launch_and_inject(app_dir: Path | None, db_path: Path | None, backup_dir: Pa
     user_config_dir = user_scripts_config_dir()
     user_script_manager = UserScriptManager(builtin_user_scripts_dir, user_config_dir / "user_scripts", user_config_dir / "user_scripts.json")
     runtime = CodexPlusRuntime(None, user_script_manager, debug_port)
+    if backend_settings().provider_sync_enabled:
+        sync_result = run_provider_sync()
+        if sync_result.status == ProviderSyncStatus.SKIPPED:
+            print(f"Provider sync skipped: {sync_result.message}")
     server = start_helper(service, export_service, port=helper_port)
     codex_proc = None
     try:
@@ -374,6 +384,10 @@ def handle_bridge_request(
     payload: dict[str, object],
     runtime: CodexPlusRuntime | None = None,
 ) -> dict[str, object]:
+    if path == "/settings/get" and runtime:
+        return SettingsStore().load().to_dict()
+    if path == "/settings/set" and runtime:
+        return SettingsStore().update(payload).to_dict()
     if path == "/user-scripts/list" and runtime:
         return runtime.user_scripts.inventory()
     if path == "/user-scripts/set-enabled" and runtime:
